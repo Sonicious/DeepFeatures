@@ -1,28 +1,31 @@
 import random
 import numpy as np
+from time import time
 from typing import Dict
 from si_dataset import ds
-#from multiprocessing import Pool
-from pathos.multiprocessing import ProcessingPool as Pool
+from multiprocessing import Pool
+from multiprocessing import Process
 from ml4xcube.splits import assign_block_split
+#from concurrent.futures import ProcessPoolExecutor
 from ml4xcube.preprocessing import drop_nan_values, fill_nan_values
 from ml4xcube.utils import get_chunk_by_index, get_chunk_sizes, split_chunk, calculate_total_chunks
+from pathos.multiprocessing import ProcessingPool as Pool
+
+
 
 
 def worker_preprocess_chunk(args): # process_samples):
-    #idx, sample_size, overlap, split_val, data_cube = args
-    chunk, sample_size, overlap, split_val = args
-    #chunk = get_chunk_by_index(data_cube, idx)
-
-    mask = chunk['split'] == split_val
+    ds_obj, idx = args
+    chunk = get_chunk_by_index(ds_obj.data_cube, idx)
+    mask = chunk['split'] == ds_obj.split_val
 
     cf = {var: np.ma.masked_where(~mask, chunk[var]).filled(np.nan) for var in chunk if var != 'split'}
-    cf = split_chunk(cf, sample_size=sample_size, overlap=overlap)
+    cf = split_chunk(cf, sample_size=ds_obj.sample_size, overlap=ds_obj.overlap)
     vars = list(cf.keys())
     cf = drop_nan_values(cf, mode='if_all_nan', vars=vars)
     cf = fill_nan_values(cf, vars=vars, method='sample_mean')
-    #if process_samples: cf = process_samples(cf)
     return cf
+
 
 class XrDataset:
     def __init__(self, data_cube, batch_size, process_batch, split_val = 1., overlap = None, sample_size = None):
@@ -36,7 +39,7 @@ class XrDataset:
         self.block_size = get_chunk_sizes(data_cube)
         self.batch_size = batch_size
         self.current_chunk = None
-        self.nproc = 2
+        self.nproc = 6
         self.num_chunks = 6
 
         # Calculate number of chunks
@@ -90,34 +93,27 @@ class XrDataset:
 
     def load_chunk(self):
         """Load a random chunk of data."""
-
+        start = time()
         processed_chunks = list()
 
-        #with Pool(processes=self.nproc) as pool:
+        #
         batch_indices = self.chunk_idx_list[self.chunk_idx:self.chunk_idx + self.num_chunks]
+        bi_time = time()
+        print(f'chunk indexes received after {bi_time - start} seconds')
         if not batch_indices:
             raise StopIteration("No more chunks to load. All samples have been processed.")
-
-        batch_chunks = [get_chunk_by_index(self.data_cube, idx, block_size=self.block_size) for idx in batch_indices]
-        for chunk in batch_chunks:
-            args = (chunk, self.sample_size, self.overlap, self.split_val)
-            processed_chunks.append(worker_preprocess_chunk(args))
-        self.chunk_idx += self.num_chunks
-        self.current_chunks = self.concatenate_chunks(processed_chunks)
-        self.chunk_position = 0  # Reset position in the concatenated chunks
-
-
-    """def load_chunk(self):
-        batch_indices = self.chunk_idx_list[self.chunk_idx:self.chunk_idx + self.num_chunks]
-
         with Pool(processes=self.nproc) as pool:
             processed_chunks = pool.map(worker_preprocess_chunk, [
-                (idx, self.sample_size, self.overlap, self.split_val, self.data_cube)
+                (self, idx)
                 for idx in batch_indices
             ])
+        pc_time = time()
+        print(f'chunks processed in {pc_time - bi_time} seconds')
         self.chunk_idx += self.num_chunks
         self.current_chunks = self.concatenate_chunks(processed_chunks)
-        self.chunk_position = 0  # Reset position in the concatenated chunks"""
+        cc_time = time()
+        print(f'chunks concatenated in {cc_time - pc_time} seconds')
+        self.chunk_position = 0  # Reset position in the concatenated chunks
 
 
     def __iter__(self):
@@ -156,6 +152,10 @@ def main():
     # Assume the Zarr store is structured with 'samples' as a dimension
 
     xds = ds#[['ARI', 'ARI2']]
+
+    #for var_name in xds.data_vars:
+    #    print(var_name)
+
     data_cube = assign_block_split(
         ds=xds,
         block_size=[("time", 11), ("y", 150), ("x", 150)],
@@ -171,7 +171,9 @@ def main():
 
     # Iterate through the batches
     for batch in data_iterator:
-        print(f"Received batch with shape: {batch.shape}")
+        pass
+        #print(f"Received batch with shape: {batch.shape}")
+
 
 if __name__ == "__main__":
     main()
