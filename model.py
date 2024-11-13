@@ -10,6 +10,8 @@ class DimensionalityReducer(nn.Module):
         self.relu1 = nn.ReLU()
         self.conv2 = nn.Conv3d(in_channels=128, out_channels=64, kernel_size=(1, 1, 1))
         self.relu2 = nn.ReLU()
+        self.conv3 = nn.Conv3d(in_channels=64, out_channels=32, kernel_size=(1, 1, 1))
+        self.relu3 = nn.ReLU()
 
     def forward(self, x):
         x = x.permute(0, 4, 1, 2, 3)  # (batch_size, 209, 11, 15, 15)
@@ -17,16 +19,20 @@ class DimensionalityReducer(nn.Module):
         x = self.relu1(x)
         x = self.conv2(x)
         x = self.relu2(x)
+        x = self.conv3(x)
+        x = self.relu3(x)
         return x.permute(0, 2, 3, 4, 1)  # (batch_size, 11, 15, 15, 64)
 
 
 class Upscaler(nn.Module):
     def __init__(self):
         super(Upscaler, self).__init__()
-        self.conv1 = nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(1, 1, 1))
+        self.conv1 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(1, 1, 1))
         self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv3d(in_channels=128, out_channels=209, kernel_size=(1, 1, 1))
+        self.conv2 = nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(1, 1, 1))
         self.relu2 = nn.ReLU()
+        self.conv3 = nn.Conv3d(in_channels=128, out_channels=209, kernel_size=(1, 1, 1))
+        self.relu3 = nn.ReLU()
 
     def forward(self, x):
         x = x.permute(0, 4, 1, 2, 3)  # (batch_size, 64, 11, 15, 15)
@@ -34,6 +40,8 @@ class Upscaler(nn.Module):
         x = self.relu1(x)
         x = self.conv2(x)
         x = self.relu2(x)
+        x = self.conv3(x)
+        x = self.relu3(x)
         return x.permute(0, 2, 3, 4, 1)  # (batch_size, 11, 15, 15, 209)
 
 
@@ -48,12 +56,12 @@ class TemporalPositionalEmbedding(nn.Module):
 
 
 class TransformerAE(pl.LightningModule):
-    def __init__(self, d2=512, dbottleneck=256, frames=11, max_position=50,
+    def __init__(self, d2=512, dbottleneck=16, frames=11, max_position=50,
                  loss_fn=nn.MSELoss(), learning_rate=1e-3):
         super(TransformerAE, self).__init__()
 
         self.frames = frames
-        self.din = 15 * 15 * 64  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
+        self.din = 15 * 15 * 32  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
 
         # Dimensionality reduction and upscaling modules
         self.dim_reducer = DimensionalityReducer()
@@ -62,16 +70,31 @@ class TransformerAE(pl.LightningModule):
         # Encoder linear layer
         self.encoder_linear = nn.Linear(self.din, d2)
 
-        # Decorder linear layer
-        self.decoder_linear = nn.Linear(dbottleneck, d2)
 
         # Transformer encoder and decoder
-        self.transformer = nn.Transformer(d_model=d2, nhead=4, num_encoder_layers=1,
-                                          num_decoder_layers=1, dim_feedforward=d2)
+        self.transformer = nn.Transformer(d_model=d2, nhead=16, num_encoder_layers=8,
+                                          num_decoder_layers=8, dim_feedforward=d2)
 
         # Bottleneck linear layers
-        self.encoder_bottleneck = nn.Linear(d2, dbottleneck)
-        self.decoder_bottleneck = nn.Linear(dbottleneck, d2)
+        self.encoder_intermidiate1 = nn.Linear(d2, d2 // 2)
+        self.relu1 = nn.ReLU()
+        self.encoder_intermidiate2 = nn.Linear(d2 // 2, d2 // 4)
+        self.relu2 = nn.ReLU()
+        self.encoder_intermidiate3 = nn.Linear(d2 // 4, d2 // 8)
+        self.relu3 = nn.ReLU()
+        self.encoder_intermidiate4 = nn.Linear(d2 // 8, d2 // 16)
+        self.relu4 = nn.ReLU()
+        self.encoder_bottleneck = nn.Linear(d2 // 16, dbottleneck)
+
+        self.decoder_bottleneck = nn.Linear(dbottleneck, d2 // 16)
+        self.relu5 = nn.ReLU()
+        self.decoder_intermidiate1 = nn.Linear(d2 // 16, d2 // 8)
+        self.relu6 = nn.ReLU()
+        self.decoder_intermidiate2 = nn.Linear(d2 // 8, d2 // 4)
+        self.relu7 = nn.ReLU()
+        self.decoder_intermidiate3 = nn.Linear(d2 // 4, d2 // 2)
+        self.relu8 = nn.ReLU()
+        self.decoder_intermidiate4 = nn.Linear(d2 // 2, d2)
 
         # Output linear layer to map back to flattened input size
         self.output_linear = nn.Linear(d2, self.din)
@@ -125,13 +148,34 @@ class TransformerAE(pl.LightningModule):
         print("Shape after transformer encoder:", encoded.shape)
 
         # Bottleneck layer
+        encoded  = self.encoder_intermidiate1(encoded)
+        print("Shape after intermidiate encoder:", encoded.shape)
+        encoded = self.relu1(encoded)
+        encoded = self.encoder_intermidiate2(encoded)
+        encoded = self.relu2(encoded)
+        encoded = self.encoder_intermidiate3(encoded)
+        encoded = self.relu3(encoded)
+        encoded = self.encoder_intermidiate4(encoded)
+        encoded = self.relu4(encoded)
+        print("Shape after intermidiate encoder:", encoded.shape)
+
         encoded = self.encoder_bottleneck(encoded)
         print("Shape after bottleneck:", encoded.shape)
         return encoded
 
     def decode(self, encoded, time_gaps):
         # Calculate cumulative positions from time gaps
-        encoded = self.decoder_linear(encoded)
+        encoded = self.decoder_bottleneck(encoded)
+        encoded = self.relu5(encoded)
+        encoded = self.decoder_intermidiate1(encoded)
+        encoded = self.relu6(encoded)
+        encoded = self.decoder_intermidiate2(encoded)
+        encoded = self.relu7(encoded)
+        encoded = self.decoder_intermidiate3(encoded)
+        encoded = self.relu8(encoded)
+        encoded = self.decoder_intermidiate4(encoded)
+
+        #encoded = self.decoder_linear(encoded)
 
         print("Shape after lin decoder:", encoded.shape)
 
@@ -157,7 +201,7 @@ class TransformerAE(pl.LightningModule):
 
         # Reshape back to original dimensions for upscaling
         decoded = decoded.permute(1, 0, 2)  # Shape: (batch_size, frames, din)
-        decoded = decoded.view(decoded.size(0), self.frames, 15, 15, 64)  # (batch_size, frames, 15, 15, 64)
+        decoded = decoded.view(decoded.size(0), self.frames, 15, 15, 32)  # (batch_size, frames, 15, 15, 64)
 
         # Upscale channels back to the original input dimension
         decoded = self.upscaler(decoded)  # Shape: (batch_size, frames, 15, 15, 209)
@@ -194,7 +238,7 @@ import torch
 def main():
     # Define model parameters
     d2 = 512  # Hidden dimension
-    dbottleneck = 256  # Bottleneck dimension
+    dbottleneck = 16  # Bottleneck dimension
     frames = 11  # Number of frames we want to consider
     max_position = 50  # Maximum position index for embeddings
     batch_size = 2  # Batch size for dummy data
