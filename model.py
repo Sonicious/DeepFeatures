@@ -1,16 +1,16 @@
 import torch.nn as nn
 import torch.optim as optim
 import lightning.pytorch as pl
-
+from torchsummary import summary
 
 class DimensionalityReducer(nn.Module):
     def __init__(self):
         super(DimensionalityReducer, self).__init__()
-        self.conv1 = nn.Conv3d(in_channels=209, out_channels=128, kernel_size=(1, 1, 1))
+        self.conv1 = nn.Conv3d(in_channels=209, out_channels=128, kernel_size=(1, 3, 3))
         self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv3d(in_channels=128, out_channels=64, kernel_size=(1, 1, 1))
+        self.conv2 = nn.Conv3d(in_channels=128, out_channels=64, kernel_size=(1, 3, 3))
         self.relu2 = nn.ReLU()
-        self.conv3 = nn.Conv3d(in_channels=64, out_channels=32, kernel_size=(1, 1, 1))
+        self.conv3 = nn.Conv3d(in_channels=64, out_channels=32, kernel_size=(1, 3, 3))
         self.relu3 = nn.ReLU()
 
     def forward(self, x):
@@ -27,11 +27,11 @@ class DimensionalityReducer(nn.Module):
 class Upscaler(nn.Module):
     def __init__(self):
         super(Upscaler, self).__init__()
-        self.conv1 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(1, 1, 1))
+        self.conv1 = nn.ConvTranspose3d(in_channels=32, out_channels=64, kernel_size=(1, 3, 3))
         self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(1, 1, 1))
+        self.conv2 = nn.ConvTranspose3d(in_channels=64, out_channels=128, kernel_size=(1, 3, 3))
         self.relu2 = nn.ReLU()
-        self.conv3 = nn.Conv3d(in_channels=128, out_channels=209, kernel_size=(1, 1, 1))
+        self.conv3 = nn.ConvTranspose3d(in_channels=128, out_channels=209, kernel_size=(1, 3, 3))
         self.relu3 = nn.ReLU()
 
     def forward(self, x):
@@ -61,7 +61,7 @@ class TransformerAE(pl.LightningModule):
         super(TransformerAE, self).__init__()
 
         self.frames = frames
-        self.din = 15 * 15 * 32  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
+        self.din = 9 * 9 * 32  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
 
         # Dimensionality reduction and upscaling modules
         self.dim_reducer = DimensionalityReducer()
@@ -114,7 +114,7 @@ class TransformerAE(pl.LightningModule):
 
         # Fill cumulative positions by computing the cumulative sum for each batch sample
         cumulative_positions[:, 1:] = torch.cumsum(time_gaps, dim=1)
-        print(cumulative_positions)
+        # print(cumulative_positions)
 
         return cumulative_positions
 
@@ -124,32 +124,33 @@ class TransformerAE(pl.LightningModule):
 
         # Flatten spatial dimensions for the Transformer input
         x = x.reshape(x.size(0), self.frames, -1)  # Expected shape: (batch_size, frames, din)
+        print(x.shape)
         x = self.encoder_linear(x)  # Map flattened input to d2 dimension
-        print("lin encoder shape:", x.shape)
+        # print("lin encoder shape:", x.shape)
 
         # Calculate cumulative positions from time gaps
         cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-        print("cumulative_positions shape:", cumulative_positions.shape)
+        # print("cumulative_positions shape:", cumulative_positions.shape)
 
         # Obtain positional embeddings without flattening
         pos_emb = self.positional_embedding(cumulative_positions)  # Shape: (batch_size, frames, d2)
-        print("pos_emb shape:", pos_emb.shape)
+        # print("pos_emb shape:", pos_emb.shape)
 
         # Add positional embeddings to the input
         x = x + pos_emb  # Shape should match (batch_size, frames, d2)
-        print("Shape after adding pos_emb:", x.shape)
+        # print("Shape after adding pos_emb:", x.shape)
 
         # Permute to (frames, batch_size, d2) for Transformer input
         x = x.permute(1, 0, 2)
-        print("Shape after permute:", x.shape)
+        # print("Shape after permute:", x.shape)
 
         # Pass through Transformer encoder
         encoded = self.transformer.encoder(x)
-        print("Shape after transformer encoder:", encoded.shape)
+        # print("Shape after transformer encoder:", encoded.shape)
 
-        # Bottleneck layer
+        # Bottleneck layers
         encoded  = self.encoder_intermidiate1(encoded)
-        print("Shape after intermidiate encoder:", encoded.shape)
+        # print("Shape after intermidiate encoder:", encoded.shape)
         encoded = self.relu1(encoded)
         encoded = self.encoder_intermidiate2(encoded)
         encoded = self.relu2(encoded)
@@ -157,10 +158,10 @@ class TransformerAE(pl.LightningModule):
         encoded = self.relu3(encoded)
         encoded = self.encoder_intermidiate4(encoded)
         encoded = self.relu4(encoded)
-        print("Shape after intermidiate encoder:", encoded.shape)
+        # print("Shape after intermidiate encoder:", encoded.shape)
 
         encoded = self.encoder_bottleneck(encoded)
-        print("Shape after bottleneck:", encoded.shape)
+        # print("Shape after bottleneck:", encoded.shape)
         return encoded
 
     def decode(self, encoded, time_gaps):
@@ -177,18 +178,17 @@ class TransformerAE(pl.LightningModule):
 
         #encoded = self.decoder_linear(encoded)
 
-        print("Shape after lin decoder:", encoded.shape)
+        # print("Shape after lin decoder:", encoded.shape)
 
         cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-        print(cumulative_positions.shape)
+        # print(cumulative_positions.shape)
 
         # Obtain positional embeddings in d2 dimension and map to dbottleneck
         pos_emb = self.positional_embedding(cumulative_positions)  # Shape: (batch_size, frames, d2)
-        print("pos_emb shape:", pos_emb.shape)
+        # print("pos_emb shape:", pos_emb.shape)
         #pos_emb = self.decoder_bottleneck(pos_emb)  # Map to shape (batch_size, frames, dbottleneck)
         pos_emb = pos_emb.permute(1, 0, 2)
-        print("pos_emb shape in decode after bottleneck:", pos_emb.shape)
-
+        # print("pos_emb shape in decode after bottleneck:", pos_emb.shape)
 
         # Add positional embeddings to the encoded input
         encoded = encoded + pos_emb  # Shapes now match: (batch_size, frames, dbottleneck)
@@ -201,11 +201,11 @@ class TransformerAE(pl.LightningModule):
 
         # Reshape back to original dimensions for upscaling
         decoded = decoded.permute(1, 0, 2)  # Shape: (batch_size, frames, din)
-        decoded = decoded.view(decoded.size(0), self.frames, 15, 15, 32)  # (batch_size, frames, 15, 15, 64)
+        decoded = decoded.view(decoded.size(0), self.frames, 9, 9, 32)  # (batch_size, frames, 15, 15, 64)
 
         # Upscale channels back to the original input dimension
         decoded = self.upscaler(decoded)  # Shape: (batch_size, frames, 15, 15, 209)
-        print("Shape after upscaler:", decoded.shape)
+        # print("Shape after upscaler:", decoded.shape)
         return decoded
 
     def forward(self, x, time_gaps):
@@ -213,18 +213,30 @@ class TransformerAE(pl.LightningModule):
         decoded = self.decode(encoded, time_gaps)
         return decoded
 
+    # def training_step(self, batch, batch_idx):
+    #     x, time_gaps = batch
+    #     output = self(x, time_gaps)
+    #     loss = self.loss_fn(output, x)
+    #     self.log("train_loss", loss, prog_bar=True)
+    #     return loss
+
     def training_step(self, batch, batch_idx):
-        x, time_gaps, _ = batch
+        x, time_gaps = batch
+        if torch.isnan(x).any() or torch.isnan(time_gaps).any():
+            print("NaN detected in input data.")
+
         output = self(x, time_gaps)
         loss = self.loss_fn(output, x)
-        self.log("train_loss", loss)
-        return loss
+
+        if torch.isnan(loss):
+            print("NaN detected in loss.")
+            return loss  # Return early if loss is NaN to prevent further computation
 
     def validation_step(self, batch, batch_idx):
-        x, time_gaps, _ = batch
+        x, time_gaps = batch
         output = self(x, time_gaps)
         loss = self.loss_fn(output, x)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
@@ -246,9 +258,11 @@ def main():
     # Instantiate the model
     model = TransformerAE(d2=d2, dbottleneck=dbottleneck, frames=frames, max_position=max_position)
 
+
     # Generate dummy input data
     # Input data shape: (batch_size, frames, 15, 15, 209)
     x = torch.randn(batch_size, frames, 15, 15, 209)
+
 
     # Generate dummy time gaps for each sample in the batch (shape: (batch_size, frames - 1))
     time_gaps = torch.tensor([
