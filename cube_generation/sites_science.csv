@@ -1,0 +1,96 @@
+No,Site name (city/station/...),Ready for generation?,Science case for,Ground measurement [Y/N],Protection status [Y/N],"Country Code (ISO alpha2)
+(will not be included in  data cube, too political)","Site ID (give a name or write ""none"")","ground measurement: 
+ecosystem station/atmosphere station/experiement site/own private data","geographical location: centre coordiantes: 
+LAT 
+(EPSG4326/WGS84)","geographical location: centre coordiantes: 
+LON 
+(EPSG4326/WGS84)",Science case potential,any other info?,remarks,Link,Citation,for flux towers only,"elevation above mean sea level [m]
+mainly for flux towers",measurements available from [year],measurements available to [year],"is sentinel 2 time period period covered (at least 2 years)?
+Y/N","fluxtower: land cover 
+IGBP classification",Data availablity,"site extent (North)
+for flux sites only",site extent (East) for flux sites only,site extent (South) for flux sites only,site extent (West) for flux sites only
+1,Test Hainich,yes,Karin,Y,N?,DE,DE-Hai,ecosystem station,51.079407,10.452089,test,,,,,,438.7,2000,2024,Y,DBF,public,,,,
+1,Test Torfhaus,yes,Karin,Y,N?,DE,DE-Toh,atmosphere station,51.8078781912335,10.5355932709866,test2,,,,,,801,,,,,public,,,,
+1,Test Oberklenkendorf,yes,Karin,Y,,DE,DE-Okd,ecosystem station,53.4126,9.09247,test3,,,,,,9,,,,GRA,public,,,,
+1,Test Graswang,yes,Karin,Y,,DE,DE-Gwg,ecosystem station,47.57083,11.03261,test4,,,,https://acsess.onlinelibrary.wiley.com/doi/10.2136/vzj2018.03.0060 ,,864,,,,GRA,privat,,,,
+1,Test Davos,yes,Karin,Y,,CH,CH-Dav,ecosystem station,46.81533,9.85591,test5,,,,,,1689,,,,ENF,pubic,,,,
+1,Test Bilos,yes,Karin,Y,,FR,FR-Bil,ecosystem station,44.493652,-0.956092,test6,,,,,,,,,,ENF,privat,,,,
+1,Test Bosco Fontana,yes,Karin,Y,,IT,IT-BFt,ecosystem station,45.197754,10.741966,test7,,,,,,23,,,,DBF,privat,,,,
+1,Test Norunda,yes,Karin,Y,,SE,SE-Nor,ecosystem station,60.0865,17.479504,test8,,,,,,45,,,,ENF,public,,,,
+1,Test Bily Kriz,yes,Karin,Y,,CZ,CZ-BK1,ecosystem station,49.502075,18.536882,test9,,,,,,875,,,,ENF,public,,,,
+,many,no,Daniela,,,EU,e.g. DE-Hai,atmosphere station,https://fluxnet.org/sites/site-list-and-pages/,https://fluxnet.org/data/data-availability/#FLUXNET2015,Ecosystem station,,??,"https://www.icos-cp.eu/data-products/2G60-ZHAK
+
+https://www.europe-fluxdata.eu/home/sites-list
+
+https://fluxnet.org/sites/site-list-and-pages/","Warm Winter 2020 Team, & ICOS Ecosystem Thematic Centre. (2022). 
+Warm Winter 2020 ecosystem eddy covariance flux product for 73 stations 
+in FLUXNET-Archive format—release 2022-1 (Version 1.0). ICOS Carbon 
+Portal. https://doi.org/10.18160/2G60-ZHAK",,??,,,,,,include Hurdal and Norunda site in Scandinavia,"all Eastern sites (CZ, PL, RO)",Mailand,France completely
+,many,no,Daniela,,,EU,e.g DE-STE,,,??,Atmosphere station,,,,,,,,,,,,include Hurdal and Norunda site in Scandinavia,"all Eastern sites (CZ, PL, RO)",Mailand,France completely
+1,Turow (Poland),no,Martin,,,PL,,,50.84874456,14.86926364,Lignite mining: active,,,,,,,,,,,,--,--,--,--
+1,Jänschwalde (Cottbus),no,Martin,,,DE,,,,,Lignite mining: recently stopped,,,,,,,,,,,,--,--,--,--
+1,Hambach (Jülich),no,Martin,,,DE,,,,??,Lignite mining: active,,,,,,,,,,,,--,--,--,--
+1,Inden (Jülich),no,Martin,,,DE,,,,??,Lignite mining: active,,,,,,,,,,,,--,--,--,--
+1,Profen (Leipzig),no,Martin,,,DE,,,,??,Lignite mining: active,,,,,,,,,,,,--,--,--,--
+1,Lom ČSA (Czech republic),no,Martin,,,CZ,,,,??,Lignite mining: active,,,,,,,,,,,,--,--,--,--
+1,Adamow (Poland),no,Martin,,,,,,,,??,,,,,,,,,,,,--,--,--,--
+1,Lieberoser desert,yes,Karin,N,,DE,DE-Lie,,51.9430471482778,14.3557970044994,Desert,,,,,,,,,,,,--,--,--,--
+1,??,no,Clemens,,,DE,,,,??,Standing deadwood,,,,,,,,,,,,--,--,--,--
+1,??,no,Clemens,N,,DE,,,,??,Standing deadwood,,,,,,,,,,,,--,--,--,--
+1,Leipzig,yes,Karin,,,DE,Leipzig_01,,51.337296,12.376166,urban,,,,,,,,,,,,--,--,--,--
+1,Leipzig,no,Karin,,,DE,Leipzig_02,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Leipzig,no,Karin,,,DE,Leipzig_03,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Leipzig,no,Karin,,,DE,Leipzig_04,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Dresden,no,Karin,,,DE,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Bonn,no,Karin,,,DE,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Gießen,no,Karin,,,DE,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Jena,no,Karin,,,DE,Jena_01,,50.927222,11.586111,urban,,there are 2 jena cubes,,,,,,,,,,--,--,--,--
+1,Illmenau,no,Karin,,,DE,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,,no,Karin,,,,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,,no,Karin,,,,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,,no,Karin,,,,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,,no,Karin,,,,,,check with Flora Incognita measurements,??,urban,,,,,,,,,,,,--,--,--,--
+1,Carpathians,no,Daria,,,,Carp_01,,23.68677594,48.3579182,biodiversity,priority,,,,,,,,,,,--,--,--,--
+2,Carpathians,no,Daria,,,,Carp_02,,23.82160822,48.35468766,biodiversity,priority,,,,,,,,,,,--,--,--,--
+3,Carpathians,no,Daria,,,,Carp_03,,23.68205862,48.2680501,biodiversity,priority,,,,,,,,,,,--,--,--,--
+4,Carpathians,no,Daria,,,,Carp_04,,23.81665491,48.26482968,biodiversity,priority,,,,,,,,,,,--,--,--,--
+5,Carpathians,no,Daria,,,,Carp_05,,24.97533454,47.77452417,biodiversity,priority,,,,,,,,,,,--,--,--,--
+6,Carpathians,no,Daria,,,,Carp_06,,22.4286634,48.70043609,biodiversity,might be changed,,,,,,,,,,,--,--,--,--
+7,Carpathians,no,Daria,,,,Carp_07,,23.78357868,48.67416837,biodiversity,might be changed,,,,,,,,,,,--,--,--,--
+8,Carpathians,no,Daria,,,,Carp_08,,24.35819858,48.6749139,biodiversity,might be changed,,,,,,,,,,,--,--,--,--
+9,Carpathians,no,Daria,,,,Carp_09,,23.75010367,48.0592009,biodiversity,might be changed,,,,,,,,,,,,,,
+1,Leipzig Auwald crane site,no,Karin,,,DE,,,Does this coincide with Leipzig city cubes?,??,Ground measurements available,,,,,,,,,,,,--,--,--,--
+1,Leipzig arboretum,no,Karin,,,DE,,,,??,Ground measurements available,,,,,,,,,,,,--,--,--,--
+1,Jena Experiment,no,Karin,,,DE,Jena_02,,50◦55' N,11◦35' E,Ground measurements available,,there are 2 jena cubes,,,,130,,,,,,--,--,--,--
+1,Bad Lauchstädt,no,Karin,,,DE,,,51.391569,11.879318,Ground measurements available,,Is this too close to UTM boundary?,,,,,,,,,,--,--,--,--
+1,DLR Site (Leif),no,Martin,,,DE,,,,??,Ground measurements available,,,,,,,,,,,,--,--,--,--
+1,Rostocker Heide,no,Karin,,,DE,,,,??,Protected area??,,"it's a moor, too much water?",,,,,,,,,,--,--,--,--
+30,"NSG, Natura 2000, map from Luise",no,Martin,,,,,,,??,Protected area,,"# Min area?
+# In/close to urban area: 2 cubes
+# In river area?
+# Forests: yes
+# Grassland: yes
+# No wattenmeer, no peat bogs",,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,Oder für Algae-Bloom Experimente,no,Konstantin,,,,,,??,??,Algae-Bloom,,"include cubes which have a ground obsevration site, too",https://www.igb-berlin.de/en/news/new-analysis-satellite-data-confirm-massive-algal-bloom-oder-river ,"""Oder für Algae-Bloom Experimente
+New analysis: satellite data confirm massive algal bloom in the Oder River | IGB (igb-berlin.de)
+Algae bloom in the North Sea – Brockmann Consult (brockmann-consult.de)""",,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,DWD weather/phenology stations,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,other phenology data sets,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+1,,no,,,,,,,,??,,,,,,,,,,,,,--,--,--,--
+,,no,,,,,,,,,,,,,,,,,,,,,--,--,--,--
+,,no,,,,,,,,,,,,,,,,,,,,,--,--,--,--
+,,no,,,,,,,,,,,,,,,,,,,,,--,--,--,--
+,,no,,,,,,,,,,,,,,,,,,,,,--,--,--,--
+,,no,,,,,,,,,,,,,,,,,,,,,--,--,--,--
+,TOTAL  no of sites,119,,,,,,,,,,,,,,,,,,,,,,,,
