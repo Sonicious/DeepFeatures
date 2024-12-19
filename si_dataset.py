@@ -1,5 +1,7 @@
+import pickle
 import spyndex
 import xarray as xr
+from ml4xcube.preprocessing import replace_inf_with_nan, get_range, standardize, get_median
 
 da = xr.open_zarr('/net/scratch/mreinhardt/testcube.zarr')["s2l2a"]
 # print(da['band']) # ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B11', 'B12', 'B8A']
@@ -84,12 +86,54 @@ all_indices = spyndex.computeIndex(
     lambdaR  = spyndex.bands.R.modis.wavelength,
     lambdaS1 = spyndex.bands.S1.modis.wavelength,
 )
-selected_index = all_indices
+
+#selected_index = all_indices.sel(index=["NDVI"], time="2016-11-01", x=(596726., 596746.), y=(5664648., 5664628.)).compute()
+
+#print(selected_index.shape)
+
+"""selected_times = '2016-11-01'
+selected_x = [596726., 596746., 596766., 596786., 596806., 596826., 596846., 596866., 596886., 596906., 596926., 596946., 596966., 596986., 597006.]
+selected_y = [5664648., 5664628., 5664608., 5664588., 5664568., 5664548., 5664528., 5664508., 5664488., 5664468., 5664448., 5664428., 5664408., 5664388., 5664368.,]
+
+subcube = all_indices.sel(
+    index = 'NDVI',
+    time=selected_times,
+    x=selected_x,
+    y=selected_y
+)
+print(subcube.compute())
+
+print('===============================')
+print('===============================')
+print('===============================')
+print('===============================')
+"""
+#print(selected_index)
 #selected_index = all_indices.isel(time=slice(0,1), x=slice(0, 10), y=slice(0, 10))
 #selected_index = all_indices.sel(time="2016-11-01").isel(x=slice(0, 10), y=slice(0, 10))
 #print(selected_index.chunks)
 #print(selected_index.compute().shape)
 
+# when using ml4xcube
 index_values = all_indices.index.values
 data_vars = {str(idx): all_indices.sel(index=idx).drop_vars('index') for idx in index_values}
-ds = xr.Dataset(data_vars)
+ds = xr.Dataset(data_vars)#[['EVI']]
+"""ds = replace_inf_with_nan(ds)
+#
+with open('stats.pkl', "rb") as f:
+    stats = pickle.load(f)
+#
+print('standardize')
+std_ds = standardize(ds, stats)
+#
+print('get_ranges')
+ranges = get_range(std_ds)
+#
+print('save ranges')
+with open("ranges_standardized.pkl", "wb") as file:
+    pickle.dump(ranges, file)
+
+print('compute median')
+med_dict = get_median(std_ds)
+with open('median.pkl', "wb") as f:
+    pickle.dump(med_dict, f)"""
