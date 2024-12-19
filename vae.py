@@ -135,63 +135,53 @@ class TransformerAE(pl.LightningModule):
         self.upscaler = MultiScaleAttentionUpscaler(in_channels=16, out_channels=209)
 
 
-        self.positional_embedding_enc = TemporalPositionalEmbedding(d_model=32, max_position=max_position)
-        self.positional_embedding_dec = TemporalPositionalEmbedding(d_model=32, max_position=max_position)
-        self.transformer_enc = nn.Transformer(d_model=32, nhead=4, num_encoder_layers=2,
-                                              num_decoder_layers=2, dim_feedforward=32,
+        self.positional_embedding_enc = TemporalPositionalEmbedding(d_model=64, max_position=max_position)
+        self.positional_embedding_dec = TemporalPositionalEmbedding(d_model=64, max_position=max_position)
+        self.transformer_enc = nn.Transformer(d_model=64, nhead=4, num_encoder_layers=2,
+                                              num_decoder_layers=2, dim_feedforward=64,
                                               dropout=0.1).encoder
 
-        self.transformer_dec = nn.Transformer(d_model=32, nhead=4, num_encoder_layers=2,
-                                              num_decoder_layers=2, dim_feedforward=32,
+        self.transformer_dec = nn.Transformer(d_model=64, nhead=4, num_encoder_layers=2,
+                                              num_decoder_layers=2, dim_feedforward=64,
                                               dropout=0.1).encoder
-
-        #self.linear_enc = nn.Sequential(
-        #    nn.Linear(64, 24),
-        #    nn.GELU(),  # Activation after linear layer
-        #)
-#
-        #self.linear_dec = nn.Sequential(
-        #    nn.Linear(24, 64),
-        #    nn.GELU(),  # Activation after linear layer
-        #)
-
         self.encoder_linear = nn.Sequential(
-            nn.Linear(32, 16),
-            nn.GELU(),  # Activation after linear layer
+            nn.Linear(64, 16),
+            nn.LeakyReLU(negative_slope=0.01),  # Activation after linear layer
         )
         self.decoder_linear = nn.Sequential(
-            nn.Linear(16, 32),
-            nn.GELU(),  # Activation after linear layer
+            nn.Linear(16, 64),
+            nn.LeakyReLU(negative_slope=0.01),  # Activation after linear layer
         )
 
         # Token reduction and upsampling layers
         self.token_reducer = nn.Sequential(
             nn.Linear(self.frames, num_reduced_tokens),
-            nn.GELU()  # Activation for token reduction
+            nn.LeakyReLU(negative_slope=0.01)  # Activation for token reduction
         )
         self.token_upsampler = nn.Sequential(
             nn.Linear(num_reduced_tokens, self.frames),
-            nn.GELU()  # Activation for token upsampling
+            nn.LeakyReLU(negative_slope=0.01)  # Activation for token upsampling
         )
 
         #self.positional_embedding_enc = TemporalPositionalEmbedding(d_model=16, max_position=num_reduced_tokens)
         #self.positional_embedding_dec = TemporalPositionalEmbedding(d_model=16, max_position=num_reduced_tokens)
-        #self.transformer_enc2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
-        #                                      num_decoder_layers=2, dim_feedforward=16,
-        #                                      dropout=0.1).encoder
-#
-        #self.transformer_dec2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
-        #                                      num_decoder_layers=2, dim_feedforward=16,
-        #                                      dropout=0.1).encoder
+        self.transformer_enc2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
+                                              num_decoder_layers=2, dim_feedforward=16,
+                                              dropout=0.1).encoder
+
+        self.transformer_dec2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
+                                              num_decoder_layers=2, dim_feedforward=16,
+                                              dropout=0.1).encoder
         self.bottleneck_reducer = nn.Sequential(
             nn.Linear(16 * num_reduced_tokens, dbottleneck),
-            nn.Softplus(beta=1, threshold=20)
+            nn.LeakyReLU(negative_slope=0.01)
         ) # Reduce to bottleneck
         self.bottleneck_expander = nn.Sequential(
             nn.Linear(dbottleneck, 16 * num_reduced_tokens),
-            nn.Softplus(beta=1, threshold=20)
+            nn.LeakyReLU(negative_slope=0.01)
         ) # Expand from bottleneck
-
+        self.fc_mu = nn.Linear(dbottleneck, dbottleneck)
+        self.fc_logvar = nn.Linear(dbottleneck, dbottleneck)
 
         # Loss and learning rate
         self.loss_fn = loss_fn
@@ -212,63 +202,112 @@ class TransformerAE(pl.LightningModule):
         # Apply dimensionality reduction
         x = self.dim_reducer(x)  # Expected shape: (batch_size, frames, 15, 15, 64)
         x = x.reshape(x.size(0), self.frames, -1)  # Expected shape: (batch_size, frames, din)
-        #x = self.linear_enc(x)
         cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
 
         # Add Positional embeddings & Pass through Transformer encoder
         pos_emb = self.positional_embedding_enc(cumulative_positions)  # Shape: (batch_size, frames, d2)
         pos_emb = pos_emb / torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
         x = x + pos_emb  # Shape should match (frames, batch_size, d2)
+        #print(x.shape)
         x = self.transformer_enc(x.permute(1, 0, 2)).permute(1, 0, 2)
         x = self.encoder_linear(x)
+        #print(x.shape)#"""
         x = self.token_reducer(x.permute(0, 2, 1))
-        #x = self.transformer_enc2(x.permute(2, 0, 1)).permute(1, 2, 0)
+        #latent_pos_emb = self.positional_embedding_enc(torch.arange(self.num_reduced_tokens, device=x.device)  # Shape: (num_reduced_tokens, d_model)).unsqueeze(0).expand(x.size(0), -1, -1).permute(1, 0, 2)
+        #x = x.permute(2, 0, 1) + latent_pos_emb
+        x = self.transformer_enc2(x.permute(2, 0, 1)).permute(1, 2, 0)
         x = x.reshape(x.size(0), -1)
         x = self.bottleneck_reducer(x)
-        return x
+
+        mu = self.fc_mu(x)
+        logvar = self.fc_logvar(x)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+        #print(x.shape)
+        #return x
 
     def decode(self, x, time_gaps):
         x = self.bottleneck_expander(x)
         x = x.reshape(x.size(0), 16, 3)
         cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-
-        #x = self.transformer_dec2(x.permute(0, 2, 1)).permute(0, 2, 1)
+        # latent_pos_emb = self.positional_embedding_dec2(torch.arange(self.num_reduced_tokens, device=x.device)).unsqueeze(0).expand(x.size(0), -1, -1).permute(1, 0, 2)
+        # x = x.permute(2, 0, 1) + latent_pos_emb
+        x = self.transformer_dec2(x.permute(0, 2, 1)).permute(0, 2, 1)
 
         x = self.token_upsampler(x).permute(0, 2, 1)
         x = self.decoder_linear(x)
-        pos_emb = self.positional_embedding_enc(cumulative_positions).permute(1, 0, 2)  # Shape: (frames, batch_size, d2)
+        #print(cumulative_positions)
+        pos_emb = self.positional_embedding_dec(cumulative_positions).permute(1, 0, 2)  # Shape: (frames, batch_size, d2)
         pos_emb = pos_emb/ torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
+        #print(x.shape)
+        #print(pos_emb.shape)
         x = x + pos_emb.permute(1, 0, 2)
+        #print(x.shape)
+        # Pass through the Transformer decoder
         x = self.transformer_dec(x)
-        #x = self.linear_dec(x)
+        #print(x)
 
-        x = x.reshape(x.size(0), 2, self.frames, 4, 4)
+        #x = x.permute(1, 0, 2)  # Shape: (frames, frames, din)
+        #print(x.shape)
+        x = x.reshape(x.size(0), 4, self.frames, 4, 4)
+        #print(x.shape)"""
         x = self.upscaler(x)  # Shape: (batch_size, frames, 15, 15, 209)
+        #print(x.shape)
         return x
 
     def forward(self, x, time_gaps):
-        encoded = self.encode(x, time_gaps)
+        encoded, mu, logvar = self.encode(x, time_gaps)
         decoded = self.decode(encoded, time_gaps)
-        return decoded, encoded
+        return decoded, encoded, mu, logvar
 
+
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample z from N(mu, var) using N(0, 1).
+        """
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def loss_function(self, output, target, mask, mean, logvar):
+        """
+        Compute the combined loss: reconstruction + KL divergence.
+        `beta` is a weighting factor for the KL divergence term.
+        """
+        reconstruction_loss = self.loss_fn(output, target, mask)
+        kl_div = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
+        kl_div = kl_div / output.size(0)  # Normalize by batch size
+        #beta = reconstruction_loss / (kl_div + 1e-7)
+        beta = 0.1
+        return reconstruction_loss + beta * kl_div, reconstruction_loss, kl_div
 
     def training_step(self, batch, batch_idx):
         x, time_gaps, mask = batch
-        output, encoded = self(x, time_gaps)
-        loss = self.loss_fn(output, x, mask)
+        x = torch.clamp(x, min=-1e6, max=1e6)
+        output, encoded, mu, logvar = self(x, time_gaps)
+        #loss = self.loss_fn(output, x, mask)
+        loss, recon_loss, kl_div = self.loss_function(output, x, mask, mu, logvar)
         self.log("train_loss", loss, prog_bar=True)
+        self.log("kl_div", kl_div, prog_bar=True)
+        self.log("recon_loss", recon_loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, time_gaps, mask = batch
-        output, encoded = self(x, time_gaps)
-        loss = self.loss_fn(output, x, mask)
+        x = torch.clamp(x, min=-1e6, max=1e6)
+        output,encoded, mu, logvar = self(x, time_gaps)
+        loss, recon_loss, kl_div = self.loss_function(output, x, mask, mu, logvar)
+
+        # Log the metrics separately for better monitoring
         self.log("val_loss", loss, prog_bar=True)
+        self.log("val_recon_loss", recon_loss, prog_bar=True)
+        self.log("val_kl_div", kl_div, prog_bar=True)
+
         return loss
 
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-6)
+        optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-7)
 
         # Define a scheduler (e.g., ReduceLROnPlateau or LambdaLR)
         """scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
