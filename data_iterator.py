@@ -13,13 +13,21 @@ from ml4xcube.utils import calculate_total_chunks
 from multiprocessing import Pool
 from ml4xcube.splits import assign_block_split
 #from concurrent.futures import ProcessPoolExecutor
+from ml4xcube.preprocessing import standardize, normalize
 from ml4xcube.preprocessing import drop_nan_values
 from ml4xcube.preprocessing import fill_nan_values
 from pathos.multiprocessing import ProcessingPool as Pool
 
 
+
+def compute_time_gaps(time_coords: np.ndarray) -> torch.Tensor:
+    """Calculate time gaps between consecutive timestamps."""
+    time_deltas = np.diff(time_coords).astype('timedelta64[D]').astype(int)
+    return torch.tensor(time_deltas)
+
+
 def worker_preprocess_chunk(args): # process_samples):
-    ds_obj, idx = args
+    ds_obj, idx, stats = args
     chunk, coords = get_chunk_by_index(ds_obj.data_cube, idx)
     mask = chunk['split'] == ds_obj.split_val
 
@@ -27,18 +35,19 @@ def worker_preprocess_chunk(args): # process_samples):
     #print(chunk['split'])
 
     cf = {var: np.ma.masked_where(~mask, chunk[var]).filled(np.nan) for var in chunk if var != 'split'}
-    print('split chunk')
+    # print('split chunk')
     cf, coords = split_chunk(cf, coords, sample_size=ds_obj.sample_size, overlap=ds_obj.overlap)
     vars = list(cf.keys())
-    print('drop nan values')
+    # print('drop nan values')
     cf, coords = drop_nan_values(cf, coords, mode='if_all_nan', vars=vars)
-    print('fill nan values')
+    # print('fill nan values')
     cf = fill_nan_values(cf, vars=vars, method='sample_mean')
+    cf = standardize(cf, stats)
     return cf, coords
 
 
 class XrDataset:
-    def __init__(self, data_cube, batch_size, process_batch = None, split_val = 1., overlap = None, sample_size = None):
+    def __init__(self, data_cube, batch_size, statistics = None, process_batch = None, split_val = 1., overlap = None, sample_size = None):
         """
         Args:
             data_cube: The giant data cube (numpy array or another large data structure).
@@ -49,13 +58,19 @@ class XrDataset:
         self.block_size = get_chunk_sizes(data_cube)
         self.batch_size = batch_size
         self.current_chunk = None
-        self.nproc = 3
-        self.num_chunks = 3
+        self.nproc = 6
+        self.num_chunks = 6
+
+        self.statistics = statistics
 
         # Calculate number of chunks
         self.total_chunks = calculate_total_chunks(self.data_cube)
-        self.chunk_idx_list = list(range(self.total_chunks))
-        random.shuffle(self.chunk_idx_list)
+       # self.chunk_idx_list = list(range(self.total_chunks))
+
+       # random.shuffle(self.chunk_idx_list)
+       # print(self.chunk_idx_list)
+        self.chunk_idx_list = [20, 43, 12, 5, 13, 30, 32, 33, 21, 46, 34, 36, 26, 22, 17, 25, 27, 40, 19, 14, 38, 55, 16, 37, 4, 8, 9, 18, 2, 54, 53, 51, 28, 47, 6, 42, 45, 29, 52, 35, 7, 0, 48, 39, 11, 50, 1, 15, 49, 44, 41, 10, 31, 24, 3, 23]
+        #self.chunk_idx_list = [20, 43, 12, 5, 13, 30, ]#32, 33, 21, 46, 34, 36]
 
         self.chunk_idx = 0
         self.process_batch = process_batch
@@ -83,8 +98,8 @@ class XrDataset:
         keys = list(chunks[0].keys())
         coord_keys = list(coords[0].keys())
 
-        for chunk in chunks:
-            print(chunk['ARI'].shape)
+        #for chunk in chunks:
+        #    print(chunk['ARI'].shape)
 
         # Loop over the keys and concatenate the arrays along the time dimension
         for key in keys:
@@ -115,6 +130,7 @@ class XrDataset:
         stacked_data = stacked_data[idx, :]  # Shuffle along the sample axis (axis=0)
         for coord_key in stacked_coords:
             stacked_coords[coord_key] = stacked_coords[coord_key][idx, :]
+
         return stacked_data, stacked_coords
 
 
@@ -124,12 +140,12 @@ class XrDataset:
 
         batch_indices = self.chunk_idx_list[self.chunk_idx:self.chunk_idx + self.num_chunks]
         bi_time = time()
-        print(f'chunk indexes received after {bi_time - start} seconds')
+        # print(f'chunk indexes received after {bi_time - start} seconds')
         if not batch_indices:
             raise StopIteration("No more chunks to load. All samples have been processed.")
         with Pool(processes=self.nproc) as pool:
             mapped_results = pool.map(worker_preprocess_chunk, [
-                (self, idx)
+                (self, idx, self.statistics)
                 for idx in batch_indices
             ])
 
@@ -137,17 +153,15 @@ class XrDataset:
         processed_chunks, coords = zip(*mapped_results)  # Unzip the list of tuples
 
         pc_time = time()
-        print(f'chunks processed in {pc_time - bi_time} seconds')
+        # print(f'chunks processed in {pc_time - bi_time} seconds')
         self.chunk_idx += self.num_chunks
         self.current_chunks, self.coords = self.concatenate(processed_chunks, coords)
         cc_time = time()
-        print(f'chunks concatenated in {cc_time - pc_time} seconds')
+        # print(f'chunks concatenated in {cc_time - pc_time} seconds')
         self.chunk_position = 0  # Reset position in the concatenated chunks
-
 
     def __iter__(self):
         return self
-
 
     def __next__(self):
         """Return the next batch."""
@@ -171,11 +185,19 @@ class XrDataset:
         batch = self.current_chunks[self.chunk_position:end_position, :]  # Shape: (batch_size, n_features)
         batch_coords = {key: self.coords[key][self.chunk_position:end_position] for key in self.coords.keys()}
 
+        # Compute time gaps for the current batch
+        time_coords = batch_coords['time']
+        if len(time_coords) > 1:
+            time_deltas = np.diff(time_coords.astype('datetime64[D]')).astype(int)
+            time_gaps = torch.tensor(time_deltas, dtype=torch.int32)  # Ensure tensor format
+        else:
+            time_gaps = torch.empty((0,), dtype=torch.int32)  # Empty tensor if not enough time points
+
         # Move the position forward
         self.chunk_position = end_position
 
         # Return the selected batch
-        return torch.from_numpy(batch), batch_coords
+        return torch.from_numpy(batch), time_gaps
 
 
 def main():
@@ -194,17 +216,29 @@ def main():
     batch_size = 8
 
     # Create the iterator
-    data_iterator = XrDataset(data_cube, batch_size, sample_size=[("time", 11), ("y", 15), ("x", 15)])
+    data_iterator = XrDataset(data_cube, batch_size, sample_size=[("time", 11), ("y", 15), ("x", 15)], split_val=0.0)
 
     # Iterate through the batches
     for batch in data_iterator:
         #pass
-        data, coords = batch
-        print(f"Received batch with shape: {data.shape}")
-        print(f'Time coordinates received: {coords['time'][0]}')
-        print(f'Lat coordinates received: {coords['x'][0]}')
-        print(f'Lon coordinates received: {coords['y'][0]}')
+        #data, coords, time_gaps = batch
+        #print(f"Received batch with shape: {data.shape}")
+        #print(f'Time coordinates received: {coords['time'][0]}')
+        #print(f'Lat coordinates received: {coords['x'][0]}')
+        #print(f'Lon coordinates received: {coords['y'][0]}')
+        #print(f"Computed time gaps (torch tensor): {time_gaps}")
+        data, time_gaps = batch
+        #print(f"Received batch with shape: {data.shape}")
 
+        # Check for NaNs in the batch
+        if torch.isnan(data).any():
+            print("Warning: NaN values detected in the batch.")
+            break
+        else:
+            print("No NaN values in the batch.")
+
+        # Print other details if needed
+        #print(f"Computed time gaps (torch tensor): {time_gaps}")
 
 
 
