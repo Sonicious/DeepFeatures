@@ -137,7 +137,8 @@ def apply_nbar(cube: xr.Dataset, angles: xr.Dataset) -> xr.Dataset:
     return cube
 
 
-def compute_spectral_indices(ds: xr.Dataset) -> xr.Dataset:
+def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
+    ds = cube["s2l2a"].to_dataset(dim="band")
     indices = list(spyndex.indices.keys())
 
     # remove indices which are not provided by Sentinel-2
@@ -233,13 +234,9 @@ def compute_spectral_indices(ds: xr.Dataset) -> xr.Dataset:
     params.update(extra)
 
     # calculate indices
-    indices = spyndex.computeIndex(index=indices, params=params)
+    cube["spec_indices"] = spyndex.computeIndex(index=indices, params=params)
 
-    # create a dataset where each spectral index is given by
-    # a seperate variable
-    si_ds = indices.to_dataset(dim="index")
-
-    return si_ds
+    return cube
 
 
 def delete_temp_files(super_store: dict, attrs: dict):
