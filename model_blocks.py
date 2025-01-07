@@ -245,7 +245,7 @@ import torch
 import torch.nn as nn
 
 class DimensionalityReducer(nn.Module):
-    def __init__(self, in_channels=209, reduction_ratio=8, dropout_prob=0.07):
+    def __init__(self, in_channels=221, reduction_ratio=8, dropout_prob=0.07):
         super(DimensionalityReducer, self).__init__()
 
         # Block 1: Multi-scale attention with CBAM and spatial downsampling
@@ -325,7 +325,7 @@ class DimensionalityReducer(nn.Module):
 
 
 class MultiScaleAttentionUpscaler(nn.Module):
-    def __init__(self, in_channels=16, out_channels=209, reduction_ratio=8, dropout_prob=0.07):
+    def __init__(self, in_channels=16, out_channels=221, reduction_ratio=8, dropout_prob=0.07):
         super(MultiScaleAttentionUpscaler, self).__init__()
 
         #self.conv0 = nn.Conv3d(4, 16, kernel_size=(1, 1, 1), stride=(1, 1, 1))  # Downsample to ~5x5
@@ -369,6 +369,7 @@ class MultiScaleAttentionUpscaler(nn.Module):
         #print(x.shape)
 
         x = self.conv0(x)
+        #print(x.shape)
         y=x
         x = self.block1(x)
         x = self.pool(x)
