@@ -1,14 +1,31 @@
 import pickle
 import spyndex
 import xarray as xr
-from ml4xcube.preprocessing import replace_inf_with_nan, get_range, standardize, get_median
+from ml4xcube.preprocessing import replace_inf_with_nan, get_range, standardize, get_median, get_statistics
 
 da = xr.open_zarr('/net/scratch/mreinhardt/testcube.zarr')["s2l2a"]
-# print(da['band']) # ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B11', 'B12', 'B8A']
+#print(da['band']) # ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B11', 'B12', 'B8A']
+
+
+# Assuming `da` is your DataArray with dimensions (band, time, y, x)
+bands = da['band'].values  # Extract band names (e.g., ['B01', 'B02', ...])
+
+# Create a Dataset with each band as a separate variable
+all_bands = xr.Dataset(
+    {band: da.sel(band=band).drop_vars('band') for band in bands},  # Add variables for each band
+    coords={
+        'time': da.coords['time'],  # Preserve time coordinates
+        'x': da.coords['x'],        # Preserve x coordinates
+        'y': da.coords['y']         # Preserve y coordinates
+    }
+)
+
+# Drop any coordinates not in ['x', 'y', 'time']
+da_bands = da.drop([coord for coord in da.coords if coord not in ['x', 'y', 'time']])
+
 
 all_indices = [idx for idx, attrs in spyndex.indices.items() if ("Sentinel-2" in attrs.platforms)]
 
-#all_indices.remove("CCI")
 all_indices.remove("NIRvP")
 
 all_indices = spyndex.computeIndex(
@@ -118,10 +135,19 @@ print('===============================')
 index_values = all_indices.index.values
 data_vars = {str(idx): all_indices.sel(index=idx).drop_vars('index') for idx in index_values}
 ds = xr.Dataset(data_vars)#[['EVI']]
+print(ds)
+# Append variables from all_bands to ds
+for var in all_bands.data_vars:
+    ds[var] = all_bands[var]
+
+print(ds)
+ds = replace_inf_with_nan(ds)
 """ds = replace_inf_with_nan(ds)
 #
-with open('stats.pkl', "rb") as f:
-    stats = pickle.load(f)
+
+stats = get_statistics(ds)
+with open('stats.pkl', "wb") as f:
+    pickle.dump(stats, f)
 #
 print('standardize')
 std_ds = standardize(ds, stats)
@@ -131,9 +157,9 @@ ranges = get_range(std_ds)
 #
 print('save ranges')
 with open("ranges_standardized.pkl", "wb") as file:
-    pickle.dump(ranges, file)
+    pickle.dump(ranges, file)"""
 
-print('compute median')
+"""print('compute median')
 med_dict = get_median(std_ds)
 with open('median.pkl', "wb") as f:
     pickle.dump(med_dict, f)"""
