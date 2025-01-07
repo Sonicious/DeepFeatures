@@ -92,11 +92,19 @@ class MultiScaleAttentionBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_sizes=[3, 5, 7], reduction_ratio=8):
         super(MultiScaleAttentionBlock, self).__init__()
         self.convs = nn.ModuleList([
-            nn.Conv3d(in_channels, out_channels, kernel_size=(1, k, k), padding=(0, k // 2, k // 2))
+            nn.Sequential(
+                nn.Conv3d(in_channels, out_channels, kernel_size=(1, k, k), padding=(0, k // 2, k // 2)),
+                nn.LeakyReLU(negative_slope=0.01, inplace=True)  # Add LeakyReLU activation
+            )
             for k in kernel_sizes
         ])
+
         self.attention = CBAMBlock(out_channels, reduction=reduction_ratio)
-        self.fusion = nn.Conv3d(len(kernel_sizes) * out_channels, out_channels, kernel_size=1)
+        self.fusion = nn.Sequential(
+            nn.Conv3d(len(kernel_sizes) * out_channels, out_channels, kernel_size=1),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)  # Add LeakyReLU to fusion
+        )
+
 
     def forward(self, x):
         # Apply convolutions of different kernel sizes
