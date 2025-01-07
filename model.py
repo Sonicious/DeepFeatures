@@ -115,35 +115,45 @@ class WeightedMaskedMSELoss(nn.Module):
 
 
 class TransformerAE(pl.LightningModule):
-    def __init__(self, d2=637, dbottleneck=8, frames=11, max_position=50, in_channels=209, reduction_ratio=16,
-                 loss_fn=WeightedMaskedMSELoss(), learning_rate=1e-4, num_reduced_tokens=3):
+    def __init__(self, dbottleneck=6, frames=11, max_position=50, in_channels=221, reduction_ratio=16,
+                 loss_fn=WeightedMaskedMSELoss(), learning_rate=1e-3, num_reduced_tokens=3):
         super(TransformerAE, self).__init__()
 
         self.frames = frames
         self.num_reduced_tokens = num_reduced_tokens
 
-        # Dimensionality reduction and upscaling modules
-        self.kernel = (1, 2, 2)
-        self.din = (15-(self.kernel[1]-1)*8) * (15-(self.kernel[2]-1)*8) * 16  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
-
-        self.dim_reducer = DimensionalityReducer(in_channels=209, reduction_ratio=8)
-
-        # Attention block for latent features
-        #self.attention = MultiHeadSelfAttention(embed_dim=16, num_heads=4)
+        self.dim_reducer = DimensionalityReducer(in_channels=221, reduction_ratio=8)
 
         # Upscaler to reconstruct original dimensions
-        self.upscaler = MultiScaleAttentionUpscaler(in_channels=16, out_channels=209)
+        self.upscaler = MultiScaleAttentionUpscaler(in_channels=16, out_channels=221)
 
 
-        self.positional_embedding_enc = TemporalPositionalEmbedding(d_model=32, max_position=max_position)
-        self.positional_embedding_dec = TemporalPositionalEmbedding(d_model=32, max_position=max_position)
-        self.transformer_enc = nn.Transformer(d_model=32, nhead=4, num_encoder_layers=2,
-                                              num_decoder_layers=2, dim_feedforward=32,
-                                              dropout=0.1).encoder
+        self.positional_embedding_shared = TemporalPositionalEmbedding(d_model=64, max_position=max_position)
+        self.transformer_enc = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=64,
+                nhead=8,
+                dim_feedforward=4,
+                dropout=0.1,
+                batch_first=True  # Ensure batch-first data layout
+            ),
+            num_layers=8 # Number of encoder layers
+        )
+        #self.transformer_enc = nn.TransformerEncoder(
+        #    nn.TransformerEncoderLayer(d_model=16, nhead=4, dim_feedforward=6, dropout=0.1),
+        #    num_layers=4  # Number of stacked encoder layers
+        #)
 
-        self.transformer_dec = nn.Transformer(d_model=32, nhead=4, num_encoder_layers=2,
-                                              num_decoder_layers=2, dim_feedforward=32,
-                                              dropout=0.1).encoder
+        self.transformer_dec = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=64,
+                nhead=8,
+                dim_feedforward=4,
+                dropout=0.1,
+               batch_first=True  # Ensure batch-first data layout
+            ),
+            num_layers=8  # Number of encoder layers
+        )
 
         #self.linear_enc = nn.Sequential(
         #    nn.Linear(64, 24),
@@ -156,33 +166,49 @@ class TransformerAE(pl.LightningModule):
         #)
 
         self.encoder_linear = nn.Sequential(
-            nn.Linear(32, 16),
-            nn.GELU(),  # Activation after linear layer
+            nn.Linear(64, 16),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True) ,  # Activation after linear layer
         )
         self.decoder_linear = nn.Sequential(
-            nn.Linear(16, 32),
-            nn.GELU(),  # Activation after linear layer
+            nn.Linear(16, 64),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True) ,  # Activation after linear layer
         )
 
         # Token reduction and upsampling layers
         self.token_reducer = nn.Sequential(
             nn.Linear(self.frames, num_reduced_tokens),
-            nn.GELU()  # Activation for token reduction
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)  # Activation for token reduction
         )
         self.token_upsampler = nn.Sequential(
             nn.Linear(num_reduced_tokens, self.frames),
-            nn.GELU()  # Activation for token upsampling
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)   # Activation for token upsampling
         )
 
         #self.positional_embedding_enc = TemporalPositionalEmbedding(d_model=16, max_position=num_reduced_tokens)
         #self.positional_embedding_dec = TemporalPositionalEmbedding(d_model=16, max_position=num_reduced_tokens)
-        #self.transformer_enc2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
-        #                                      num_decoder_layers=2, dim_feedforward=16,
-        #                                      dropout=0.1).encoder
+        self.transformer_enc2 = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=16,
+                nhead=4,
+                dim_feedforward=4,
+                dropout=0.1,
+                batch_first=True  # Ensure batch-first data layout
+            ),
+            num_layers=6  # Number of encoder layers
+        )
 #
-        #self.transformer_dec2 = nn.Transformer(d_model=16, nhead=4, num_encoder_layers=2,
-        #                                      num_decoder_layers=2, dim_feedforward=16,
-        #                                      dropout=0.1).encoder
+        self.transformer_dec2 = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=16,
+                nhead=4,
+                dim_feedforward=4,
+                dropout=0.1,
+                batch_first=True  # Ensure batch-first data layout
+            ),
+            num_layers=6  # Number of encoder layers
+        )
+
+
         self.bottleneck_reducer = nn.Sequential(
             nn.Linear(16 * num_reduced_tokens, dbottleneck),
             nn.Softplus(beta=1, threshold=20)
@@ -213,15 +239,16 @@ class TransformerAE(pl.LightningModule):
         x = self.dim_reducer(x)  # Expected shape: (batch_size, frames, 15, 15, 64)
         x = x.reshape(x.size(0), self.frames, -1)  # Expected shape: (batch_size, frames, din)
         #x = self.linear_enc(x)
-        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-
         # Add Positional embeddings & Pass through Transformer encoder
-        pos_emb = self.positional_embedding_enc(cumulative_positions)  # Shape: (batch_size, frames, d2)
+        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
+        pos_emb = self.positional_embedding_shared(cumulative_positions)  # Shape: (batch_size, frames, d2)
         pos_emb = pos_emb / torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
         x = x + pos_emb  # Shape should match (frames, batch_size, d2)
         x = self.transformer_enc(x.permute(1, 0, 2)).permute(1, 0, 2)
         x = self.encoder_linear(x)
         x = self.token_reducer(x.permute(0, 2, 1))
+        #latent_pos_emb = self.positional_embedding_enc(torch.arange(self.num_reduced_tokens, device=x.device)).unsqueeze(0).expand(x.size(0), -1, -1).permute(1, 0, 2)
+        #x = x.permute(2, 0, 1) + latent_pos_emb
         #x = self.transformer_enc2(x.permute(2, 0, 1)).permute(1, 2, 0)
         x = x.reshape(x.size(0), -1)
         x = self.bottleneck_reducer(x)
@@ -229,20 +256,25 @@ class TransformerAE(pl.LightningModule):
 
     def decode(self, x, time_gaps):
         x = self.bottleneck_expander(x)
-        x = x.reshape(x.size(0), 16, 3)
-        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
+        #print(x.shape)
+        #
 
-        #x = self.transformer_dec2(x.permute(0, 2, 1)).permute(0, 2, 1)
-
-        x = self.token_upsampler(x).permute(0, 2, 1)
+        x = x.reshape(x.size(0), 3, 16)
+        #x = self.transformer_dec2(x)
+        #x = x.reshape(x.size(0), 16, 3)
+        x = self.token_upsampler(x.permute(0, 2, 1)).permute(0, 2, 1)
         x = self.decoder_linear(x)
-        pos_emb = self.positional_embedding_enc(cumulative_positions).permute(1, 0, 2)  # Shape: (frames, batch_size, d2)
+
+        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
+        pos_emb = self.positional_embedding_shared(cumulative_positions).permute(1, 0, 2)  # Shape: (frames, batch_size, d2)
         pos_emb = pos_emb/ torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
         x = x + pos_emb.permute(1, 0, 2)
-        x = self.transformer_dec(x)
-        #x = self.linear_dec(x)
+        #print(x.shape)
 
-        x = x.reshape(x.size(0), 2, self.frames, 4, 4)
+
+        # Pass through the Transformer decoder
+        x = self.transformer_enc(x)
+        x = x.reshape(x.size(0), 4, self.frames, 4, 4)
         x = self.upscaler(x)  # Shape: (batch_size, frames, 15, 15, 209)
         return x
 
@@ -266,17 +298,18 @@ class TransformerAE(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         return loss
 
-
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-6)
+        # Define the optimizer
+        optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-7)
 
-        # Define a scheduler (e.g., ReduceLROnPlateau or LambdaLR)
-        """scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        # Define the ReduceLROnPlateau scheduler
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode="min",  # Minimize the monitored metric
             factor=0.1,  # Reduce LR by a factor of 0.1
-            patience=3,  # Number of epochs with no improvement before reducing LR
+            patience=5,  # Number of epochs with no improvement before reducing LR
             verbose=True,  # Print a message when LR is reduced
+            min_lr=1e-6  # Minimum learning rate
         )
 
         # Return optimizer and scheduler in the Lightning format
@@ -284,12 +317,12 @@ class TransformerAE(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",  # Metric to monitor for ReduceLROnPlateau
-                "interval": "epoch",  # Scheduler step frequency
-                "frequency": 1,  # How often to call the scheduler
+                "monitor": "val_loss",  # Metric to monitor
+                "interval": "epoch",  # Step the scheduler per epoch
+                "frequency": 1  # Apply the scheduler every epoch
             },
-        }"""
-        return optimizer
+        }
+
 
 
 def main():
@@ -305,7 +338,7 @@ def main():
 
     # Generate dummy input data
     # Input data shape: (batch_size, frames, 15, 15, 209)
-    x = torch.randn(batch_size, frames, 15, 15, 209)
+    x = torch.randn(batch_size, frames, 15, 15, 221)
 
 
     # Generate dummy time gaps for each sample in the batch (shape: (batch_size, frames - 1))
