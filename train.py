@@ -3,9 +3,6 @@ import pickle
 import lightning.pytorch as L
 from model import TransformerAE
 from dataset import HDF5Dataset
-from si_dataset import ds
-from data_iterator import XrDataset
-from ml4xcube.splits import assign_block_split
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 from ml4xcube.preprocessing import get_statistics, get_range
@@ -57,7 +54,7 @@ def main():
     # Define early stopping
     early_stopping_callback = EarlyStopping(
         monitor='val_loss',  # Metric to monitor
-        patience=5,  # Number of epochs to wait for improvement
+        patience=12,  # Number of epochs to wait for improvement
         mode='min',  # Stop if the metric stops decreasing
         verbose=True  # Print early stopping message
     )
