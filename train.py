@@ -8,7 +8,7 @@ from torch.utils.data import random_split
 from ml4xcube.preprocessing import get_statistics, get_range
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import EarlyStopping
-
+from initialize import hierarchical_initialize_weights
 
 torch.set_float32_matmul_precision('medium')  # For better performance
 
@@ -33,12 +33,13 @@ def main():
     train_split, _ = random_split(val_dataset, [train_size, remain_size])
 
     # Create DataLoaders
-    val_iterator   = DataLoader(val_split, batch_size=batch_size, shuffle=True, num_workers=8)
-    test_iterator  = DataLoader(test_split, batch_size=batch_size, shuffle=True, num_workers=8)
-    train_iterator = DataLoader(train_split, batch_size=batch_size, shuffle=True, num_workers=8)
+    val_iterator   = DataLoader(val_split, batch_size=batch_size, shuffle=False, num_workers=32)
+    test_iterator  = DataLoader(test_split, batch_size=batch_size, shuffle=False, num_workers=32)
+    train_iterator = DataLoader(train_split, batch_size=batch_size, shuffle=True, num_workers=32)
 
     # Initialize the autoencoder model
     autoencoder = TransformerAE()
+    #autoencoder.apply(hierarchical_initialize_weights)
     autoencoder.to(device)  # Move the model to GPU 3
     #autoencoder.reset_parameters()
 
@@ -56,12 +57,13 @@ def main():
         monitor='val_loss',  # Metric to monitor
         patience=12,  # Number of epochs to wait for improvement
         mode='min',  # Stop if the metric stops decreasing
-        verbose=True  # Print early stopping message
+        verbose=True,  # Print early stopping message
+        min_delta=0.01
     )
 
     # Initialize the PyTorch Lightning trainer
     trainer = L.Trainer(
-        max_epochs=100,
+        max_epochs=500,
         gradient_clip_val=1.0,
         log_every_n_steps=10,
         enable_progress_bar=True,
