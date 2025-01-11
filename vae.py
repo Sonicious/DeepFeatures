@@ -126,7 +126,7 @@ class TransformerAE(pl.LightningModule):
         self.kernel = (1, 2, 2)
         self.din = (15-(self.kernel[1]-1)*8) * (15-(self.kernel[2]-1)*8) * 16  # Flattened input dimension after reduction (15 * 15 spatial, 64 channels)
 
-        self.dim_reducer = DimensionalityReducer(in_channels=209, reduction_ratio=8)
+        self.dim_reducer = MultiScaleDimensionalityReducer(in_channels=209, reduction_ratio=8)
 
         # Attention block for latent features
         #self.attention = MultiHeadSelfAttention(embed_dim=16, num_heads=4)
