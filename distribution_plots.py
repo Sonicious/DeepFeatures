@@ -8,8 +8,8 @@ import numpy as np
 
 
 # Directory to save the plots
-#output_dir = "distribution_plots"
-output_dir = "dist_plots"
+output_dir = "distribution_plots"
+#output_dir = "dist_plots"
 os.makedirs(output_dir, exist_ok=True)  # Create the directory if it doesn't exist
 
 # Create and save distribution plots for each variable
@@ -24,7 +24,7 @@ for var_name in ds.data_vars:
     data = data[~np.isnan(data)]  # Remove NaN values
     plt.figure(figsize=(8, 6))
     #sns.histplot(data, kde=True, bins=30, color="blue", label=f"Distribution of {var_name}")
-    sns.histplot(data, bins=50, color="blue", label=f"Distribution of {var_name}", stat="count")
+    sns.histplot(data, bins=150, color="blue", label=f"Distribution of {var_name}", stat="count")
     plt.title(f"Distribution Plot for {var_name}")
     plt.xlabel("Value")
     plt.ylabel("Frequency")
