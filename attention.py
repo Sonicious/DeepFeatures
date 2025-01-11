@@ -115,6 +115,29 @@ class MultiScaleAttentionBlock(nn.Module):
         return attended
 
 
+class ConvAttentionBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, reduction_ratio=8):
+        super(ConvAttentionBlock, self).__init__()
+
+        # Single convolution with the specified kernel size
+        self.conv = nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, kernel_size=(1, kernel_size, kernel_size),
+                      padding=(0, kernel_size // 2, kernel_size // 2)),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)  # Add LeakyReLU activation
+        )
+
+        # CBAM attention mechanism
+        self.attention = CBAMBlock(out_channels, reduction=reduction_ratio)
+
+    def forward(self, x):
+        # Apply convolution
+        features = self.conv(x)
+
+        # Apply CBAM attention
+        attended = self.attention(features)
+        return attended
+
+
 class MultiHeadSelfAttention(nn.Module):
     def __init__(self, embed_dim=16, num_heads=4, dropout_prob=0.1):
         super(MultiHeadSelfAttention, self).__init__()
