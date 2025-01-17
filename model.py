@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
-from torch.optim.lr_scheduler import SequentialLR, LinearLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
 import torch.optim as optim
 import lightning.pytorch as pl
 from attention import TemporalPositionalEmbedding
 from model_blocks import *
-
-#from model_blocks import DimensionalityReducer, Upscaler
 
 
 class WeightedMaskedMSELoss(nn.Module):
@@ -86,7 +84,7 @@ class WeightedMaskedMSELoss(nn.Module):
             print("No valid values in the batch")
             return torch.tensor(0.0, requires_grad=True, device=output.device)
 
-        batch_size, frames, h, w, indices = output.size()
+        batch_size, frames, indices, h, w = output.size()
 
         # Spatial weight map
         spatial_weight_map = self.weight_map.to(output.device).unsqueeze(0).unsqueeze(0).unsqueeze(-1)
@@ -98,6 +96,8 @@ class WeightedMaskedMSELoss(nn.Module):
 
         # Combine spatial and temporal weights
         combined_weight_map = spatial_weight_map * temporal_weight_map
+
+        combined_weight_map = combined_weight_map.view(batch_size, frames, indices, h, w)
 
         # Apply the mask to select valid elements
         masked_output = output[mask]
@@ -118,12 +118,11 @@ class WeightedMaskedMSELoss(nn.Module):
 
 
 class TransformerAE(pl.LightningModule):
-    def __init__(self, dbottleneck=6, frames=11, max_position=50, in_channels=221, reduction_ratio=16,
-                 loss_fn=WeightedMaskedMSELoss(), learning_rate=1e-4, num_reduced_tokens=3):
+    def __init__(self, dbottleneck=6, frames=11, max_position=200, loss_fn=WeightedMaskedMSELoss(), learning_rate=1e-4):
         super(TransformerAE, self).__init__()
 
         self.frames = frames
-        self.num_reduced_tokens = num_reduced_tokens
+        num_reduced_tokens = 3
 
         self.dim_reducer = MultiScaleDimensionalityReducer(in_channels=221, reduction_ratio=8)
 
@@ -131,7 +130,7 @@ class TransformerAE(pl.LightningModule):
         self.upscaler = MultiScaleAttentionUpscaler(in_channels=16, out_channels=221)
 
 
-        #self.positional_embedding_shared = TemporalPositionalEmbedding(d_model=64, max_position=max_position)
+        self.positional_embedding_shared = TemporalPositionalEmbedding(d_model=64, max_position=max_position)
         self.transformer_enc = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=64,
@@ -247,13 +246,15 @@ class TransformerAE(pl.LightningModule):
         x = x.reshape(x.size(0), self.frames, -1)  # Expected shape: (batch_size, frames, din)
         #x = self.linear_enc(x)
         # Add Positional embeddings & Pass through Transformer encoder
-        #cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-        #pos_emb = self.positional_embedding_shared(cumulative_positions)  # Shape: (batch_size, frames, d2)
-        #pos_emb = pos_emb / torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
-        #x = x + pos_emb  # Shape should match (frames, batch_size, d2)
+        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
+        pos_emb = self.positional_embedding_shared(cumulative_positions)  # Shape: (batch_size, frames, d2)
+        pos_emb = pos_emb / torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
+        x = x + pos_emb  # Shape should match (frames, batch_size, d2)
         x = self.transformer_enc(x.permute(1, 0, 2)).permute(1, 0, 2)
         x = self.encoder_linear(x)
+
         x = self.token_reducer(x.permute(0, 2, 1))
+
         #latent_pos_emb = self.positional_embedding_enc(torch.arange(self.num_reduced_tokens, device=x.device)).unsqueeze(0).expand(x.size(0), -1, -1).permute(1, 0, 2)
         #x = x.permute(2, 0, 1) + latent_pos_emb
         #x = self.transformer_enc2(x.permute(2, 0, 1)).permute(1, 2, 0)
@@ -267,22 +268,26 @@ class TransformerAE(pl.LightningModule):
         #
 
         x = x.reshape(x.size(0), 3, 16)
+        #print(x.shape)
         #x = self.transformer_dec2(x)
         #x = x.reshape(x.size(0), 16, 3)
         x = self.token_upsampler(x.permute(0, 2, 1)).permute(0, 2, 1)
+        #print(x.shape)
         x = self.decoder_linear(x)
-
-        #cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
-        #pos_emb = self.positional_embedding_shared(cumulative_positions).permute(1, 0, 2)  # Shape: (frames, batch_size, d2)
-        #pos_emb = pos_emb/ torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
-        #x = x + pos_emb.permute(1, 0, 2)
+        #print(x.shape)
+        cumulative_positions = self.compute_cumulative_positions(time_gaps)  # Shape: (batch_size, frames)
+        pos_emb = self.positional_embedding_shared(cumulative_positions)  # Shape: (frames, batch_size, d2)
+        pos_emb = pos_emb/ torch.sqrt(torch.tensor(pos_emb.size(-1), dtype=torch.float))
+        x = x + pos_emb
         #print(x.shape)
 
 
         # Pass through the Transformer decoder
         x = self.transformer_enc(x)
-        x = x.reshape(x.size(0), 4, self.frames, 4, 4)
+        x = x.reshape(x.size(0) * self.frames, 4, 4, 4)
+        #print(x.shape)
         x = self.upscaler(x)  # Shape: (batch_size, frames, 15, 15, 209)
+        #print(x.shape)
         return x
 
     def forward(self, x, time_gaps):
@@ -308,13 +313,31 @@ class TransformerAE(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True, on_epoch=True)
         return loss
 
+    def test_step(self, x, time_gaps, mask, batch_idx):
+        """
+        Defines the operations for a single test step.
+        """
+        # Unpack the batch
+        #x, time_gaps, mask = batch
+
+        # Forward pass
+        output, encoded = self(x, time_gaps)
+
+        # Compute the loss using the provided loss function
+        loss = self.loss_fn(output, x, mask)
+
+        # Log the test loss
+        self.log("test_loss", loss, prog_bar=True, on_epoch=True)
+
+        return loss, output, encoded
+
     def configure_optimizers(self):
         # Define the optimizer
         optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-7)
 
         # Define the warm-up scheduler
         warmup_scheduler = {
-            "scheduler": LinearLR(optimizer, start_factor=0.001, total_iters=4158),
+            "scheduler": LinearLR(optimizer, start_factor=0.001, total_iters=5000),
             "interval": "step",  # Apply at every training step
             "frequency": 1,
         }
@@ -324,11 +347,11 @@ class TransformerAE(pl.LightningModule):
             "scheduler": ReduceLROnPlateau(
                 optimizer,
                 mode="min",
-                factor=0.3,
+                factor=0.35,
                 patience=5,
                 verbose=False,
                 min_lr=1e-7,
-                threshold=0.01,
+                threshold=1e-7,
                 threshold_mode="abs",
             ),
             "interval": "epoch",  # Apply at the end of each epoch
@@ -351,7 +374,7 @@ def main():
 
     # Generate dummy input data
     # Input data shape: (batch_size, frames, 15, 15, 209)
-    x = torch.randn(batch_size, frames, 15, 15, 221)
+    x = torch.randn(batch_size, frames, 221, 15, 15)
 
 
     # Generate dummy time gaps for each sample in the batch (shape: (batch_size, frames - 1))
