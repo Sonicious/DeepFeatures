@@ -1,6 +1,7 @@
 import h5py
 import torch
 from torch.utils.data import Dataset
+from model import TransformerAE
 
 class HDF5Dataset(Dataset):
     def __init__(self, h5_file_path):
@@ -39,9 +40,10 @@ class HDF5Dataset(Dataset):
                 - time_gaps is a torch.Tensor of shape (10,),
                 - mask is a torch.Tensor of the same shape as data (209, 11, 15, 15).
         """
-        data = torch.tensor(self.data[index], dtype=torch.float32)
+        data = torch.tensor(self.data[index], dtype=torch.float32).permute(0, 3, 1, 2)
         time_gaps = torch.tensor(self.time_gaps[index], dtype=torch.int32)
-        mask = torch.tensor(self.mask[index], dtype=torch.bool)
+        mask = torch.tensor(self.mask[index], dtype=torch.bool).permute(0, 3, 1, 2)
+
 
         return data, time_gaps, mask
 
@@ -52,7 +54,8 @@ class HDF5Dataset(Dataset):
 
 # Usage Example:
 if __name__ == "__main__":
-    h5_dataset = HDF5Dataset("train_dataset.h5")
+    h5_dataset = HDF5Dataset("val_data_11_15_15.h5")
+    model = TransformerAE()
 
     # Example: Iterate over the dataset using DataLoader
     from torch.utils.data import DataLoader
@@ -61,7 +64,9 @@ if __name__ == "__main__":
 
     for i, (data, time_gaps, mask) in enumerate(dataloader):
         #print(f"Batch {i}:")
-        #print(f"Data shape: {data.shape}")
+        print(f"Data shape: {data.shape}")
+        output = model(data, time_gaps)
+        print(f"Output shape: {output}")
         #print(f"Time gaps shape: {time_gaps.shape}")
         #print(f"Mask shape: {mask.shape}")
         # Check for NaNs in data
@@ -75,5 +80,5 @@ if __name__ == "__main__":
             print(f"NaN values at those indices: {nan_values}")
         else:
             print(f"No NaNs in data for Batch {i}.")
-        print(data)
+        #print(data)
         break
