@@ -20,7 +20,7 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
             bbox=attrs["bbox_utm"],
             crs=f"EPSG:326{attrs["utm_zone"][:2]}",
             spatial_res=constants.SPATIAL_RES,
-            time_range=["2018-07-01", "2018-08-01"],
+            time_range=[constants.DT_START, constants.DT_END],
             apply_scaling=True,
             angles_sentinel2=True,
             asset_names=[
@@ -41,6 +41,7 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
         )
         constants.LOG.info(f"Writing of cube {idx} started.")
         super_store["store_team"].write_data(ds, data_id, replace=True)
+        constants.LOG.info(f"Writing of cube {idx} finished.")
 
 
 if __name__ == "__main__":
