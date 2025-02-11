@@ -2,6 +2,7 @@ import datetime
 
 import affine
 import numpy as np
+import pandas as pd
 import rasterio
 import torch
 import xarray as xr
@@ -11,101 +12,99 @@ import constants
 import utils
 
 
-def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
-
-    if not super_store["store_team"].has_data(data_id):
-        variable_names = [v for v in constants.BANDID_TRANSLATOR.values()]
-        variable_names = variable_names + ["SCL"]
-        ds = super_store["store_sh"].open_data(
-            "S2L2A",
-            variable_names=variable_names,
-            bbox=attrs["bbox_utm"],
-            crs=f"EPSG:326{attrs["utm_zone"][:2]}",
-            spatial_res=constants.SPATIAL_RES,
-            time_range=[attrs["time_range_start"], attrs["time_range_end"]],
-            tile_size=[500, 500],
-            mosaicking_order="leastCC",
-        )
-        ds = ds.drop_vars("time_bnds")
-        scl = ds.SCL
-        crs = ds.crs
-        ds = ds.drop_vars(["SCL", "crs"])
-        xcube_sh_attrs = ds.attrs
-        s2l2a = ds.to_dataarray(dim="band")
-        s2l2a = s2l2a.sel(
-            band=[
-                "B01",
-                "B02",
-                "B03",
-                "B04",
-                "B05",
-                "B06",
-                "B07",
-                "B08",
-                "B8A",
-                "B09",
-                "B11",
-                "B12",
-            ]
-        )
-        s2l2a = s2l2a.chunk(
-            chunks=dict(
-                band=s2l2a.sizes["band"],
-                time=constants.CHUNKSIZE_TIME,
-                x=ds.sizes["x"],
-                y=ds.sizes["y"],
-            )
-        )
-        cube = xr.Dataset()
-        cube["s2l2a"] = s2l2a
-        cube["crs"] = crs
-        cube["scl"] = scl.chunk(
-            chunks=dict(time=constants.CHUNKSIZE_TIME, x=ds.sizes["x"], y=ds.sizes["y"])
-        )
-        cube["scl"].attrs = dict(
-            flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            flag_meanings=(
-                "no_data saturated_or_defective_pixel topographic_casted_shadows "
-                "cloud_shadows vegetation not_vegetation water "
-                "unclassified cloud_medium_probability "
-                "cloud_high_probability thin_cirrus snow_or_ice"
-            ),
-            flag_colors=(
-                "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
-                "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
-            ),
-        )
-        cube.attrs = attrs
-        xcube_sh_attrs["home_url"] = "https://www.sentinel-hub.com/"
-        xcube_sh_attrs["data_url"] = "https://www.sentinel-hub.com/explore/data/"
-        xcube_sh_attrs["license_url"] = (
-            "https://open.esa.int/copernicus-sentinel-"
-            "satellite-imagery-under-open-licence/"
-        )
-        cube.attrs["xcube_sh_attrs"] = xcube_sh_attrs
-        cube.attrs["affine_transform"] = cube.rio.transform()
-        super_store["store_team"].write_data(cube, data_id, replace=True)
-
-    cube = super_store["store_team"].open_data(data_id)
-    if cube.attrs["center_wgs84"] != attrs["center_wgs84"]:
-        constants.LOG.warning(
-            f"Location in the desired attributes {attrs['center_wgs84']} "
-            f"does not fit to the location stored in S2L1A "
-            f"cube{cube.attrs['center_wgs84']} "
-        )
-    cube.attrs = utils.update_dict(cube.attrs, attrs)
-    return cube
+# def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
+#     data_id_components = attrs["path"].split("/")
+#     fname = f"{attrs['site_id']:06}_s2l2a.zarr"
+#     data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
+#
+#     if not super_store["store_team"].has_data(data_id):
+#         variable_names = [v for v in constants.BANDID_TRANSLATOR.values()]
+#         variable_names = variable_names + ["SCL"]
+#         ds = super_store["store_sh"].open_data(
+#             "S2L2A",
+#             variable_names=variable_names,
+#             bbox=attrs["bbox_utm"],
+#             crs=f"EPSG:326{attrs["utm_zone"][:2]}",
+#             spatial_res=constants.SPATIAL_RES,
+#             time_range=[attrs["time_range_start"], attrs["time_range_end"]],
+#             tile_size=[500, 500],
+#             mosaicking_order="leastCC",
+#         )
+#         ds = ds.drop_vars("time_bnds")
+#         scl = ds.SCL
+#         crs = ds.crs
+#         ds = ds.drop_vars(["SCL", "crs"])
+#         xcube_sh_attrs = ds.attrs
+#         s2l2a = ds.to_dataarray(dim="band")
+#         s2l2a = s2l2a.sel(
+#             band=[
+#                 "B01",
+#                 "B02",
+#                 "B03",
+#                 "B04",
+#                 "B05",
+#                 "B06",
+#                 "B07",
+#                 "B08",
+#                 "B8A",
+#                 "B09",
+#                 "B11",
+#                 "B12",
+#             ]
+#         )
+#         s2l2a = s2l2a.chunk(
+#             chunks=dict(
+#                 band=s2l2a.sizes["band"],
+#                 time=constants.CHUNKSIZE_TIME,
+#                 x=ds.sizes["x"],
+#                 y=ds.sizes["y"],
+#             )
+#         )
+#         cube = xr.Dataset()
+#         cube["s2l2a"] = s2l2a
+#         cube["crs"] = crs
+#         cube["scl"] = scl.chunk(
+#             chunks=dict(time=constants.CHUNKSIZE_TIME, x=ds.sizes["x"], y=ds.sizes["y"])
+#         )
+#         cube["scl"].attrs = dict(
+#             flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+#             flag_meanings=(
+#                 "no_data saturated_or_defective_pixel topographic_casted_shadows "
+#                 "cloud_shadows vegetation not_vegetation water "
+#                 "unclassified cloud_medium_probability "
+#                 "cloud_high_probability thin_cirrus snow_or_ice"
+#             ),
+#             flag_colors=(
+#                 "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
+#                 "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
+#             ),
+#         )
+#         cube.attrs = attrs
+#         xcube_sh_attrs["home_url"] = "https://www.sentinel-hub.com/"
+#         xcube_sh_attrs["data_url"] = "https://www.sentinel-hub.com/explore/data/"
+#         xcube_sh_attrs["license_url"] = (
+#             "https://open.esa.int/copernicus-sentinel-"
+#             "satellite-imagery-under-open-licence/"
+#         )
+#         cube.attrs["xcube_sh_attrs"] = xcube_sh_attrs
+#         cube.attrs["affine_transform"] = cube.rio.transform()
+#         super_store["store_team"].write_data(cube, data_id, replace=True)
+#
+#     cube = super_store["store_team"].open_data(data_id)
+#     if cube.attrs["center_wgs84"] != attrs["center_wgs84"]:
+#         constants.LOG.warning(
+#             f"Location in the desired attributes {attrs['center_wgs84']} "
+#             f"does not fit to the location stored in S2L1A "
+#             f"cube{cube.attrs['center_wgs84']} "
+#         )
+#     cube.attrs = utils.update_dict(cube.attrs, attrs)
+#     return cube
 
 
 def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> xr.Dataset:
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
+    data_id = utils.get_temp_file(attrs)
     ds = super_store["store_team"].open_data(data_id)
-    scl = ds.SCL
+    scl = ds.SCL.astype(np.int8)
     ds = ds.drop_vars(["SCL"])
     xcube_stac_attrs = ds.attrs
     s2l2a = ds.to_dataarray(dim="band")
@@ -166,42 +165,42 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> xr.Dataset:
     return cube
 
 
-def get_s2l2a_angles(super_store: dict, attrs: dict) -> xr.Dataset:
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a_angles.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
-
-    if not super_store["store_team"].has_data(data_id):
-        bbox = attrs["bbox_utm"]
-        bbox = [bbox[0] - 500, bbox[1] - 500, bbox[2] + 500, bbox[3] + 500]
-        variable_names = [
-            "sunAzimuthAngles",
-            "sunZenithAngles",
-            "viewAzimuthMean",
-            "viewZenithMean",
-        ]
-        if "training" in data_id_components:
-            spatial_res = 50
-        else:
-            spatial_res = 1000
-        ds = super_store["store_sh"].open_data(
-            "S2L2A",
-            variable_names=variable_names,
-            bbox=bbox,
-            crs=f"EPSG:326{attrs["utm_zone"][:2]}",
-            spatial_res=spatial_res,
-            time_range=[attrs["time_range_start"], attrs["time_range_end"]],
-            upsampling="BILINEAR",
-            downsampling="BILINEAR",
-        )
-        ds = ds.drop_vars("time_bnds")
-        ds = ds.chunk(
-            chunks=dict(time=ds.sizes["time"], x=ds.sizes["x"], y=ds.sizes["y"])
-        )
-        super_store["store_team"].write_data(ds, data_id, replace=True)
-
-    ds = super_store["store_team"].open_data(data_id)
-    return ds
+# def get_s2l2a_angles(super_store: dict, attrs: dict) -> xr.Dataset:
+#     data_id_components = attrs["path"].split("/")
+#     fname = f"{attrs['site_id']:06}_s2l2a_angles.zarr"
+#     data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
+#
+#     if not super_store["store_team"].has_data(data_id):
+#         bbox = attrs["bbox_utm"]
+#         bbox = [bbox[0] - 500, bbox[1] - 500, bbox[2] + 500, bbox[3] + 500]
+#         variable_names = [
+#             "sunAzimuthAngles",
+#             "sunZenithAngles",
+#             "viewAzimuthMean",
+#             "viewZenithMean",
+#         ]
+#         if "training" in data_id_components:
+#             spatial_res = 50
+#         else:
+#             spatial_res = 1000
+#         ds = super_store["store_sh"].open_data(
+#             "S2L2A",
+#             variable_names=variable_names,
+#             bbox=bbox,
+#             crs=f"EPSG:326{attrs["utm_zone"][:2]}",
+#             spatial_res=spatial_res,
+#             time_range=[attrs["time_range_start"], attrs["time_range_end"]],
+#             upsampling="BILINEAR",
+#             downsampling="BILINEAR",
+#         )
+#         ds = ds.drop_vars("time_bnds")
+#         ds = ds.chunk(
+#             chunks=dict(time=ds.sizes["time"], x=ds.sizes["x"], y=ds.sizes["y"])
+#         )
+#         super_store["store_team"].write_data(ds, data_id, replace=True)
+#
+#     ds = super_store["store_team"].open_data(data_id)
+#     return ds
 
 
 def add_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
@@ -320,6 +319,51 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     return cube
 
 
+def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
+    ds_esa_wc, files = _load_esa_wc_data(super_store, cube.attrs["bbox_wgs84"])
+    esa_wc_reproject = ds_esa_wc.rio.reproject(
+        f"EPSG:326{cube.attrs['utm_zone'][:2]}",
+        shape=(cube.sizes["y"], cube.sizes["x"]),
+        transform=affine.Affine(*cube.attrs["affine_transform"]),
+        resampling=rasterio.enums.Resampling.bilinear,
+    )
+    esa_wc_reproject = esa_wc_reproject.rename(dict(time="time_lccs"))
+    cube["esa_wc"] = esa_wc_reproject["band_1"].chunk(
+        dict(
+            time_lccs=esa_wc_reproject.sizes["time_lccs"],
+            x=esa_wc_reproject.sizes["x"],
+            y=esa_wc_reproject.sizes["y"],
+        )
+    )
+    attrs = {}
+    attrs["home_url"] = "https://esa-worldcover.org"
+    attrs["data_url"] = "https://esa-worldcover.org/en/data-access"
+    attrs["license_url"] = "https://creativecommons.org/licenses/by/4.0/"
+    attrs["files"] = files
+    cube.attrs["esa_wc_attrs"] = attrs
+    return cube
+
+
+ERA5_AGGREGATION_ALL = [
+    "2dm",
+    "skt",
+    "sp",
+    "msl",
+    "stl1",
+    "stl2",
+    "stl3",
+    "stl4",
+    "swvl1",
+    "swvl2",
+    "swvl3",
+    "swvl4",
+    "t2m",
+    "u10, v10",
+]
+ERA5_AGGREGATION_MEAN_MEDIAN_STD = ["lai_hv", "lai_lv"]
+ERA5_AGGREGATION_SUM = ["e", "pev", "slhf", "sshf", "ssr", "ssrd", "str", "strd", "tp"]
+
+
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     data_ids = super_store["store_team"].list_data_ids()
     data_ids = [data_id for data_id in data_ids if "cubes/aux/era5/" in data_id]
@@ -332,14 +376,33 @@ def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             method="linear",
         )
         era5_cube = era5_cube.drop(["expver", "number", "lat", "lon"])
-        era5_tp = xr.Dataset()
-        era5_tp["tp"] = era5_cube["tp"]
-        era5_cube = era5_cube.drop_vars("tp")
 
-        era5_step = _aggregate_era5(era5_cube, "mean")
-        era5_step = era5_step.update(_aggregate_era5(era5_cube, "max"))
-        era5_step = era5_step.update(_aggregate_era5(era5_cube, "min"))
-        era5_step = era5_step.update(_aggregate_era5(era5_tp, "sum"))
+        # aggregate from hourly to daily
+        era5_step = _aggregate_era5(era5_cube[ERA5_AGGREGATION_SUM], "sum")
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "mean")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "min")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "max")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "median")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "std")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "mean")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "median")
+        )
+        era5_step = era5_step.update(
+            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "std")
+        )
         era5_steps.append(era5_step)
     era5_final = xr.concat(era5_steps, "time_era5")
     era5_final = era5_final.chunk(chunks=dict(time_era5=era5_final.sizes["time_era5"]))
@@ -464,6 +527,67 @@ def _get_dem_file_paths(bbox: list[float]) -> list[str]:
         if dem_file not in dem_files:
             dem_files.append(dem_file)
     return dem_files
+
+
+def _load_esa_wc_data(super_store: dict, bbox: list[float]) -> (xr.Dataset, list[str]):
+    files_2020, files_2021 = _get_esa_wc_file_paths(bbox)
+    dss = []
+    for files in [files_2020, files_2021]:
+        dss_year = []
+        for file in files:
+            dss_year.append(super_store["store_esa_wc"].open_data(file))
+        ds = xr.combine_by_coords(dss_year, combine_attrs="override")
+        ds.rio.write_crs(ds.spatial_ref.attrs["wkt"], inplace=True)
+        ds = ds.drop_vars("spatial_ref")
+        dss.append(ds)
+    ds = xr.concat(dss, dim="time", join="exact")
+    custom_times = [pd.Timestamp("2020-01-01 00:00"), pd.Timestamp("2021-01-01 00:00")]
+    ds = ds.assign_coords(coords=dict(time=custom_times))
+    return ds, files_2020 + files_2021
+
+
+def _get_esa_wc_lon_lat(lon: float, lat: float) -> (str, str):
+    if lon < 0:
+        lon_mod = int(abs(lon - 1))
+        lon_mod += 3 - lon_mod % 3
+        lon_str = f"W{lon_mod:03}"
+    else:
+        lon_mod = int(abs(lon))
+        lon_mod -= lon_mod % 3
+        lon_str = f"E{lon_mod:03}"
+    if lat < 0:
+        lat_mod = int(abs(lat - 1))
+        lat_mod += 3 - lat_mod % 3
+        lat_str = f"S{lat_mod:02}"
+    else:
+        lat_mod = int(abs(lat))
+        lat_mod -= lat_mod % 3
+        lat_str = f"N{lat_mod:02}"
+    return lat_str, lon_str
+
+
+def _get_esa_wc_file_paths(bbox: list[float]) -> (list[str], list[str]):
+    points = [
+        (bbox[0], bbox[1]),
+        (bbox[2], bbox[1]),
+        (bbox[2], bbox[3]),
+        (bbox[0], bbox[3]),
+    ]
+    files_2020 = []
+    files_2021 = []
+    for point in points:
+        lat_str, lon_str = _get_esa_wc_lon_lat(point[0], point[1])
+        file_2020 = (
+            f"v100/2020/map/ESA_WorldCover_10m_2020_v100_{lat_str}{lon_str}_Map.tif"
+        )
+        file_2021 = (
+            f"v200/2021/map/ESA_WorldCover_10m_2021_v200_{lat_str}{lon_str}_Map.tif"
+        )
+        if file_2020 not in files_2020:
+            files_2020.append(file_2020)
+        if file_2021 not in files_2021:
+            files_2021.append(file_2021)
+    return files_2020, files_2021
 
 
 def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:

@@ -36,7 +36,6 @@ if __name__ == "__main__":
                 secret=os.environ["S3_USER_STORAGE_SECRET"],
             ),
         ),
-        store_file=new_data_store("file", root="data"),
         store_dem=new_data_store(
             "s3",
             root="copernicus-dem-30m",
@@ -54,9 +53,7 @@ if __name__ == "__main__":
         constants.LOG.info(f"Generation of cube {idx} started.")
         # get attributes of cube
         attrs = utils.readin_sites_parameters(
-            sites_params,
-            idx,
-            constants.TRAINING_FOLDER_NAME,
+            sites_params, idx, constants.TRAINING_FOLDER_NAME
         )
 
         # get Sentinel-2 data

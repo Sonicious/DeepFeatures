@@ -1,14 +1,6 @@
 import os
-import logging
 from pathlib import Path
 import spyndex
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s - %(funcName)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
 PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science.csv")
@@ -29,7 +21,6 @@ SPATIAL_RES = 10
 CHUNKSIZE_TIME = 20
 
 SCIENCE_FOLDER_NAME = "science"
-SCIENCE_INDEXES = [0, 1]
 
 TRAINING_NB_CUBES = 250
 TRAINING_SIZE_BBOX = 0.9

@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pandas as pd
 from xcube.core.store import new_data_store
@@ -7,20 +8,23 @@ import constants
 import utils
 
 
-def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
-    data_id = (
-        f"{data_id_components[0]}/temp/{'/'.join(data_id_components[1:-1])}/{fname}"
-    )
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s - %(funcName)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
-    if not super_store["store_team"].has_data(data_id):
+
+def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
+    data_id = utils.get_temp_file(attrs)
+    # if not super_store["store_team"].has_data(data_id):
+    if True:
         ds = super_store["store_stac"].open_data(
             data_id="sentinel-2-l2a",
             bbox=attrs["bbox_utm"],
             crs=f"EPSG:326{attrs["utm_zone"][:2]}",
             spatial_res=constants.SPATIAL_RES,
-            time_range=[constants.DT_START, constants.DT_END],
+            time_range=["2018-01-01", "2018-12-31"],
             apply_scaling=True,
             angles_sentinel2=True,
             asset_names=[
@@ -39,9 +43,9 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
                 "SCL",
             ],
         )
-        constants.LOG.info(f"Writing of cube {idx} started.")
+        logging.info(f"Writing of cube {idx} to {data_id} started.")
         super_store["store_team"].write_data(ds, data_id, replace=True)
-        constants.LOG.info(f"Writing of cube {idx} finished.")
+        logging.info(f"Writing of cube {idx} to {data_id} finished.")
 
 
 if __name__ == "__main__":
@@ -64,7 +68,7 @@ if __name__ == "__main__":
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
     for idx in range(0, 1):
-        constants.LOG.info(f"Generation of cube {idx} started.")
+        logging.info(f"Generation of cube {idx} started.")
         attrs = utils.readin_sites_parameters(
             sites_params,
             idx,

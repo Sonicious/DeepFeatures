@@ -120,20 +120,22 @@ def create_utm_bounding_box(
     return bounding_box
 
 
-def apply_nbar(cube: xr.Dataset, angles: xr.Dataset) -> xr.Dataset:
-    rel_azimuth = angles.sunAzimuthAngles - angles.viewAzimuthMean
-    c = c_factor.c_factor(angles.sunZenithAngles, angles.sunZenithAngles, rel_azimuth)
+def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
+    rel_azimuth = cube.solar_angles.sel(angle="Azimuth") - cube.viewing_angles.sel(
+        angle="Azimuth"
+    )
+    c = c_factor.c_factor(
+        cube.solar_angles.sel(angle="Zenith"),
+        cube.viewing_angles.sel(angle="Zenith"),
+        rel_azimuth,
+    )
     c = c.interp(
         y=cube.y.values,
         x=cube.x.values,
         method="linear",
         kwargs={"fill_value": "extrapolate"},
     )
-    bands = cube["s2l2a"].band.values
-    idx = []
-    for band in c.band.values:
-        idx.append(int(np.where(band == bands)[0][0]))
-    cube["s2l2a"][idx] = cube.s2l2a * c
+    cube["s2l2a"] *= c
     return cube
 
 
@@ -239,16 +241,17 @@ def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
     return cube
 
 
-def delete_temp_files(super_store: dict, attrs: dict):
+def get_temp_file(attrs: dict) -> str:
+    data_id_components = attrs["path"].split("/")
+    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
+    return f"{data_id_components[0]}/temp/{'/'.join(data_id_components[1:-1])}/{fname}"
+
+
+def delete_temp_files(super_store: dict, attrs: dict) -> None:
     assert super_store["store_team"].has_data(
         attrs["path"]
     ), f"final cube not written to {attrs["path"]}"
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']}_s2l2a.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/{fname}"
-    super_store["store_team"].delete_data(data_id)
-    fname = f"{attrs['site_id']}_s2l2a_angles.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/{fname}"
+    data_id = get_temp_file(attrs)
     super_store["store_team"].delete_data(data_id)
 
 

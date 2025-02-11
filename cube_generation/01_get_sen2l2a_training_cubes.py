@@ -9,50 +9,35 @@ import constants
 import utils
 
 
-def _retry_get_sen2l2(super_store: dict, attrs: dict) -> xr.Dataset:
-    retries = 10
-    for attempt in range(1, retries + 1):
-        try:
-            data_id_components = attrs["path"].split("/")
-            fname = f"{attrs['site_id']:06}_s2l2a.zarr"
-            data_id = f"{'/'.join(data_id_components[:-1])}/temp/{fname}"
-
-            if not super_store["store_team"].has_data(data_id):
-                ds = super_store["store_stac"].open_data(
-                    data_id="SENTINEL-2",
-                    bbox=attrs["bbox_utm"],
-                    crs=f"EPSG:326{attrs["utm_zone"][:2]}",
-                    spatial_res=constants.SPATIAL_RES,
-                    time_range=[attrs["time_range_start"], attrs["time_range_end"]],
-                    apply_scaling=True,
-                    asset_names=[
-                        "B01",
-                        "B02",
-                        "B03",
-                        "B04",
-                        "B05",
-                        "B06",
-                        "B07",
-                        "B08",
-                        "B8A",
-                        "B09",
-                        "B11",
-                        "B12",
-                        "SCL",
-                    ],
-                )
-                constants.LOG.info(f"Writing of cube {idx} started.")
-                super_store["store_team"].write_data(ds, data_id, replace=True)
-            return "Done"
-        except Exception as e:
-            if attempt == retries:
-                raise
-            constants.LOG.info(f"Attempt {attempt} failed: {e}. Retrying in 1 seconds.")
-            time.sleep(1)
-
-
-def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
-    response = _retry_get_sen2l2(super_store, attrs)
+def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> None:
+    data_id = utils.get_temp_file(attrs)
+    if not super_store["store_team"].has_data(data_id):
+        ds = super_store["store_stac"].open_data(
+            data_id="SENTINEL-2",
+            bbox=attrs["bbox_utm"],
+            crs=f"EPSG:326{attrs["utm_zone"][:2]}",
+            spatial_res=constants.SPATIAL_RES,
+            time_range=[attrs["time_range_start"], attrs["time_range_end"]],
+            apply_scaling=True,
+            asset_names=[
+                "B01",
+                "B02",
+                "B03",
+                "B04",
+                "B05",
+                "B06",
+                "B07",
+                "B08",
+                "B8A",
+                "B09",
+                "B11",
+                "B12",
+                "SCL",
+            ],
+        )
+        constants.LOG.info(f"Writing of cube {idx} to {data_id} started.")
+        super_store["store_team"].write_data(ds, data_id, replace=True)
+        constants.LOG.info(f"Writing of cube {idx} to {data_id} finished.")
 
 
 if __name__ == "__main__":
@@ -60,7 +45,7 @@ if __name__ == "__main__":
         s3_credentials = json.load(f)
 
     super_store = dict(
-        store_stac=new_data_store("stac-cdse", stack_mode="odc-stac", creodias_vm=True),
+        store_stac=new_data_store("stac-cdse", stack_mode=True, creodias_vm=True),
         store_team=new_data_store(
             "s3",
             root=s3_credentials["bucket"],
