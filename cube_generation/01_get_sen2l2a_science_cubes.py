@@ -1,6 +1,4 @@
 import json
-import logging
-
 import pandas as pd
 from xcube.core.store import new_data_store
 
@@ -8,14 +6,7 @@ import constants
 import utils
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s - %(funcName)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-
-def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
+def get_s2l2a(super_store: dict, attrs: dict):
     data_id = utils.get_temp_file(attrs)
     # if not super_store["store_team"].has_data(data_id):
     if True:
@@ -24,7 +15,7 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
             bbox=attrs["bbox_utm"],
             crs=f"EPSG:326{attrs["utm_zone"][:2]}",
             spatial_res=constants.SPATIAL_RES,
-            time_range=["2018-01-01", "2018-12-31"],
+            time_range=["2019-01-01", "2019-12-31"],
             apply_scaling=True,
             angles_sentinel2=True,
             asset_names=[
@@ -43,9 +34,9 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict):
                 "SCL",
             ],
         )
-        logging.info(f"Writing of cube {idx} to {data_id} started.")
+        constants.LOG.info(f"Writing of cube {idx} to {data_id} started.")
         super_store["store_team"].write_data(ds, data_id, replace=True)
-        logging.info(f"Writing of cube {idx} to {data_id} finished.")
+        constants.LOG.info(f"Writing of cube {idx} to {data_id} finished.")
 
 
 if __name__ == "__main__":
@@ -68,10 +59,10 @@ if __name__ == "__main__":
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
     for idx in range(0, 1):
-        logging.info(f"Generation of cube {idx} started.")
+        constants.LOG.info(f"Generation of cube {idx} started.")
         attrs = utils.readin_sites_parameters(
             sites_params,
             idx,
             constants.SCIENCE_FOLDER_NAME,
         )
-        get_s2l2a_creodias_vm(super_store, attrs)
+        get_s2l2a(super_store, attrs)
