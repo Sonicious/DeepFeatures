@@ -71,12 +71,13 @@ if __name__ == "__main__":
         )
 
         # get Sentinel-2 data
-        cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
+        cube = get_datasets.get_s2l2a(super_store, attrs)
+        # cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
         constants.LOG.info(f"Sentinel-2 L2A retrieved.")
 
-        # apply BRDF correction
-        cube = utils.apply_nbar(cube)
-        constants.LOG.info(f"BRDF correction applied.")
+        # # apply BRDF correction
+        # cube = utils.apply_nbar(cube)
+        # constants.LOG.info(f"BRDF correction applied.")
 
         # allpy cloud mask
         cube = get_datasets.add_cloudmask(super_store, cube)

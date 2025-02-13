@@ -101,6 +101,48 @@ import utils
 #     return cube
 
 
+def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
+    ds = super_store["store_team"].open_data(attrs["path"])
+    scl = ds.SCL.astype(np.int8)
+    s2l2a = ds.s2l2a
+    s2l2a = s2l2a.chunk(
+        chunks=dict(
+            band=s2l2a.sizes["band"],
+            time=constants.CHUNKSIZE_TIME,
+            x=s2l2a.sizes["x"],
+            y=s2l2a.sizes["y"],
+        )
+    )
+    scl = scl.chunk(
+        chunks=dict(
+            time=constants.CHUNKSIZE_TIME,
+            x=scl.sizes["x"],
+            y=scl.sizes["y"],
+        )
+    )
+    cube = xr.Dataset()
+    cube["s2l2a"] = s2l2a
+    cube["scl"] = scl
+    cube["scl"].attrs = dict(
+        flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        flag_meanings=(
+            "no_data saturated_or_defective_pixel topographic_casted_shadows "
+            "cloud_shadows vegetation not_vegetation water "
+            "unclassified cloud_medium_probability "
+            "cloud_high_probability thin_cirrus snow_or_ice"
+        ),
+        flag_colors=(
+            "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
+            "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
+        ),
+    )
+    cube.attrs = attrs
+    cube.attrs["xcube_stac_attrs"] = ds.xcube_stac_attrs
+    cube.attrs["affine_transform"] = cube.rio.transform()
+    cube.attrs = utils.update_dict(cube.attrs, attrs)
+    return cube
+
+
 def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> xr.Dataset:
     data_id = utils.get_temp_file(attrs)
     ds = super_store["store_team"].open_data(data_id)
