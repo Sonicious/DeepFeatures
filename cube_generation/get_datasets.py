@@ -358,10 +358,18 @@ ERA5_AGGREGATION_ALL = [
     "swvl3",
     "swvl4",
     "t2m",
-    "u10, v10",
+    "u10",
+    "v10",
+    "rh",
+    "vpd",
 ]
 ERA5_AGGREGATION_MEAN_MEDIAN_STD = ["lai_hv", "lai_lv"]
 ERA5_AGGREGATION_SUM = ["e", "pev", "slhf", "sshf", "ssr", "ssrd", "str", "strd", "tp"]
+# ref Magnus Formula for vapor pressure (Gleichung 6)
+# https://journals.ametsoc.org/view/journals/bams/86/2/bams-86-2-225.xml
+MF_A = 17.625
+MF_B = 243.04
+MF_C = 610.94
 
 
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
@@ -370,6 +378,10 @@ def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     era5_steps = []
     for data_id in data_ids:
         era5 = super_store["store_team"].open_data(data_id)
+        es = MF_C * np.exp((MF_A * era5["t2m"]) / (era5["t2m"] + MF_B))
+        e = MF_C * np.exp((MF_A * era5["2dm"]) / (era5["2dm"] + MF_B))
+        era5["rh"] = (e / es) * 100
+        era5["vpd"] = es - e
         era5_cube = era5.interp(
             lat=cube.attrs["center_wgs84"][0],
             lon=cube.attrs["center_wgs84"][1],
