@@ -62,8 +62,8 @@ def get_s2l2a(super_store: dict, attrs: dict):
 if __name__ == "__main__":
     with open("s3-credentials.json") as f:
         s3_credentials = json.load(f)
-    with open("cdse-credentials.json") as f:
-        cdse_credentials = json.load(f)
+    # with open("cdse-credentials.json") as f:
+    #     cdse_credentials = json.load(f)
 
     super_store = dict(
         store_stac=new_data_store("stac-cdse", stack_mode=True, creodias_vm=True),
