@@ -12,6 +12,8 @@ def get_s2l2a(super_store: dict, attrs: dict):
     data_id = utils.get_temp_file(attrs)
 
     def _get_s2l2a_year(time_range: list[str]):
+        data_id_mod = data_id.replace(".zarr", f"{time_range[1][:4]}.zarr")
+        constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
         ds = super_store["store_stac"].open_data(
             data_id="sentinel-2-l2a",
             bbox=attrs["bbox_utm"],
@@ -36,10 +38,10 @@ def get_s2l2a(super_store: dict, attrs: dict):
                 "SCL",
             ],
         )
-        constants.LOG.info(f"Writing of cube {idx} to {data_id} started.")
-        data_id_mod = data_id.replace(".zarr", f"{time_range[1][:4]}.zarr")
+
+        constants.LOG.info(f"Writing of cube {idx} to {data_id_mod} started.")
         super_store["store_team"].write_data(ds, data_id_mod, replace=True)
-        constants.LOG.info(f"Writing of cube {idx} to {data_id} finished.")
+        constants.LOG.info(f"Writing of cube {idx} to {data_id_mod} finished.")
 
     # if not super_store["store_team"].has_data(data_id):
     if True:
