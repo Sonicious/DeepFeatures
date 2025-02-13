@@ -26,10 +26,6 @@ def setup_cloudmask_model():
 
 
 if __name__ == "__main__":
-    # get credentials for Sentinel Hub
-    with open("sh-cdse-credentials.json") as f:
-        credentials = json.load(f)
-
     # initiate all data stores
     super_store = dict(
         store_team=new_data_store(
@@ -74,6 +70,8 @@ if __name__ == "__main__":
         cube = get_datasets.get_s2l2a(super_store, attrs)
         # cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
         constants.LOG.info(f"Sentinel-2 L2A retrieved.")
+        import pdb
+        pdb.set_trace()
 
         # # apply BRDF correction
         # cube = utils.apply_nbar(cube)
@@ -106,7 +104,7 @@ if __name__ == "__main__":
         super_store["store_team"].write_data(
             cube, cube.attrs["path"], replace=True, encoding=encoding
         )
-        constants.LOG.info(f"Final cube written to {cube.attrs["path"]}.")
+        constants.LOG.info(f"Final cube written to {cube.attrs['path']}.")
 
         # # delete temp directory
         # utils.delete_temp_files(super_store, attrs)

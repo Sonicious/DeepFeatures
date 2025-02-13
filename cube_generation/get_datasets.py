@@ -102,8 +102,8 @@ import utils
 
 
 def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
-    ds = super_store["store_team"].open_data(attrs["path"])
-    scl = ds.SCL.astype(np.int8)
+    ds = super_store["store_team"].open_data("cubes/final/0.0.1/0.zarr")
+    scl = ds.scl.astype(np.int8)
     s2l2a = ds.s2l2a
     s2l2a = s2l2a.chunk(
         chunks=dict(

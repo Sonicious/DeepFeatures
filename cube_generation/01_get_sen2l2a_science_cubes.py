@@ -45,7 +45,7 @@ def get_s2l2a(super_store: dict, attrs: dict):
 
     # if not super_store["store_team"].has_data(data_id):
     if True:
-        time_range = [
+        time_ranges = [
             ["2016-11-01", "2017-12-31"],
             ["2018-01-01", "2018-12-31"],
             ["2019-01-01", "2019-12-31"],
@@ -55,8 +55,10 @@ def get_s2l2a(super_store: dict, attrs: dict):
             ["2023-01-01", "2023-12-31"],
             ["2024-01-01", "2024-12-31"],
         ]
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            list(executor.map(_get_s2l2a_year, time_range))
+        for time_range in time_ranges:
+            _get_s2l2a_year(time_range)
+        # with concurrent.futures.ThreadPoolExecutor() as executor:
+        #     list(executor.map(_get_s2l2a_year, time_ranges))
 
 
 if __name__ == "__main__":
