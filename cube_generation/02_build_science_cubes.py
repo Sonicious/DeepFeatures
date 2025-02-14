@@ -12,6 +12,7 @@ import constants
 import utils
 
 
+
 def setup_cloudmask_model():
     checkpoint = torch.utils.model_zoo.load_url(constants.CLOUDMASK_MODEL_URL)
     model = smp.Unet(
@@ -67,15 +68,14 @@ if __name__ == "__main__":
         )
 
         # get Sentinel-2 data
-        cube = get_datasets.get_s2l2a(super_store, attrs)
-        # cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
+        cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
         constants.LOG.info(f"Sentinel-2 L2A retrieved.")
+
+        # apply BRDF correction
+        cube = utils.apply_nbar(cube)
+        constants.LOG.info(f"BRDF correction applied.")
         import pdb
         pdb.set_trace()
-
-        # # apply BRDF correction
-        # cube = utils.apply_nbar(cube)
-        # constants.LOG.info(f"BRDF correction applied.")
 
         # allpy cloud mask
         cube = get_datasets.add_cloudmask(super_store, cube)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
 
         # add ESA World Cover
         cube = get_datasets.add_reprojected_esa_wc(super_store, cube)
-        constants.LOG.info(f"Land cover classification added.")
+        constants.LOG.info(f"ESA World Cover added.")
 
         # add ERA5
         cube = get_datasets.add_era5(super_store, cube)

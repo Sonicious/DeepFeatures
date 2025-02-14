@@ -109,15 +109,15 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
         chunks=dict(
             band=s2l2a.sizes["band"],
             time=constants.CHUNKSIZE_TIME,
-            x=s2l2a.sizes["x"],
-            y=s2l2a.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     scl = scl.chunk(
         chunks=dict(
             time=constants.CHUNKSIZE_TIME,
-            x=scl.sizes["x"],
-            y=scl.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     cube = xr.Dataset()
@@ -137,7 +137,6 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
         ),
     )
     cube.attrs = attrs
-    cube.attrs["xcube_stac_attrs"] = ds.xcube_stac_attrs
     cube.attrs["affine_transform"] = cube.rio.transform()
     cube.attrs = utils.update_dict(cube.attrs, attrs)
     return cube
@@ -145,10 +144,17 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
 
 def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> xr.Dataset:
     data_id = utils.get_temp_file(attrs)
-    ds = super_store["store_team"].open_data(data_id)
+    dss = []
+    for year in range(2017, 2025):
+        dss.append(super_store["store_team"].open_data(data_id.replace(".zarr", f"{year}.zarr")))
+    xcube_stac_attrs = dss[0].attrs
+    for ds in dss[1:]:
+        xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
+    ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
     scl = ds.SCL.astype(np.int8)
-    ds = ds.drop_vars(["SCL"])
-    xcube_stac_attrs = ds.attrs
+    solar_angle = ds.solar_angle
+    viewing_angle = ds.viewing_angle
+    ds = ds.drop_vars(["SCL", "solar_angle", "viewing_angle"])
     s2l2a = ds.to_dataarray(dim="band")
     s2l2a = s2l2a.sel(
         band=[
@@ -170,19 +176,21 @@ def get_s2l2a_creodias_vm(super_store: dict, attrs: dict) -> xr.Dataset:
         chunks=dict(
             band=s2l2a.sizes["band"],
             time=constants.CHUNKSIZE_TIME,
-            x=s2l2a.sizes["x"],
-            y=s2l2a.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     scl = scl.chunk(
         chunks=dict(
             time=constants.CHUNKSIZE_TIME,
-            x=scl.sizes["x"],
-            y=scl.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     cube = xr.Dataset()
     cube["s2l2a"] = s2l2a
+    cube["solar_angle"] = solar_angle
+    cube["viewing_angle"] = viewing_angle
     cube["scl"] = scl
     cube["scl"].attrs = dict(
         flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
@@ -261,8 +269,8 @@ def add_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     cloud_mask = cloud_mask.chunk(
         chunks=dict(
             time=constants.CHUNKSIZE_TIME,
-            x=cloud_mask.sizes["x"],
-            y=cloud_mask.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     cube["cloud_mask"] = cloud_mask
@@ -318,8 +326,8 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         cube[val] = lc_reproject[key].chunk(
             dict(
                 time_lccs=lc_reproject.sizes["time_lccs"],
-                x=lc_reproject.sizes["x"],
-                y=lc_reproject.sizes["y"],
+                x=constants.CHUNKSIZE_X,
+                y=constants.CHUNKSIZE_Y,
             )
         )
     attrs = lc_reproject.attrs
@@ -369,12 +377,12 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         transform=affine.Affine(*cube.attrs["affine_transform"]),
         resampling=rasterio.enums.Resampling.bilinear,
     )
-    esa_wc_reproject = esa_wc_reproject.rename(dict(time="time_lccs"))
+    esa_wc_reproject = esa_wc_reproject.rename(dict(time="time_esa_wc"))
     cube["esa_wc"] = esa_wc_reproject["band_1"].chunk(
         dict(
-            time_lccs=esa_wc_reproject.sizes["time_lccs"],
-            x=esa_wc_reproject.sizes["x"],
-            y=esa_wc_reproject.sizes["y"],
+            time_esa_wc=esa_wc_reproject.sizes["time_esa_wc"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
     attrs = {}
@@ -387,7 +395,7 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
 
 
 ERA5_AGGREGATION_ALL = [
-    "2dm",
+    "d2m",
     "skt",
     "sp",
     "msl",
@@ -400,8 +408,8 @@ ERA5_AGGREGATION_ALL = [
     "swvl3",
     "swvl4",
     "t2m",
-    "u10",
-    "v10",
+    "u10n",
+    "v10n",
     "rh",
     "vpd",
 ]
@@ -416,12 +424,13 @@ MF_C = 610.94
 
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     data_ids = super_store["store_team"].list_data_ids()
-    data_ids = [data_id for data_id in data_ids if "cubes/aux/era5/" in data_id]
+    data_ids = [data_id for data_id in data_ids if "cubes/aux/era5_allvars/" in data_id]
+    data_ids.sort() 
     era5_steps = []
     for data_id in data_ids:
         era5 = super_store["store_team"].open_data(data_id)
         es = MF_C * np.exp((MF_A * era5["t2m"]) / (era5["t2m"] + MF_B))
-        e = MF_C * np.exp((MF_A * era5["2dm"]) / (era5["2dm"] + MF_B))
+        e = MF_C * np.exp((MF_A * era5["d2m"]) / (era5["d2m"] + MF_B))
         era5["rh"] = (e / es) * 100
         era5["vpd"] = es - e
         era5_cube = era5.interp(
@@ -494,8 +503,8 @@ def add_reprojected_dem(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     dem_reproject = dem_reproject.drop_vars("spatial_ref")
     cube["dem"] = dem_reproject["band_1"].chunk(
         dict(
-            x=dem_reproject.sizes["x"],
-            y=dem_reproject.sizes["y"],
+            x=constants.CHUNKSIZE_X,
+            y=constants.CHUNKSIZE_Y,
         )
     )
 
@@ -591,8 +600,6 @@ def _load_esa_wc_data(super_store: dict, bbox: list[float]) -> (xr.Dataset, list
         for file in files:
             dss_year.append(super_store["store_esa_wc"].open_data(file))
         ds = xr.combine_by_coords(dss_year, combine_attrs="override")
-        ds.rio.write_crs(ds.spatial_ref.attrs["wkt"], inplace=True)
-        ds = ds.drop_vars("spatial_ref")
         dss.append(ds)
     ds = xr.concat(dss, dim="time", join="exact")
     custom_times = [pd.Timestamp("2020-01-01 00:00"), pd.Timestamp("2021-01-01 00:00")]
@@ -645,7 +652,7 @@ def _get_esa_wc_file_paths(bbox: list[float]) -> (list[str], list[str]):
 
 
 def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
-    era5_mode = getattr(era5.resample(time="1D"), mode)("time")
+    era5_mode = getattr(era5.compute().resample(time="1D"), mode)()
     rename_dict = {key: f"era5_{key}_{mode}" for key in era5_mode}
     rename_dict["time"] = "time_era5"
     era5_mode = era5_mode.rename(rename_dict)

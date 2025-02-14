@@ -8,6 +8,7 @@ logging.basicConfig(
     format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s - %(funcName)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logging.getLogger("botocore.httpchecksum").setLevel(logging.WARNING)
 LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
@@ -23,10 +24,13 @@ CLOUDMASK_COORDS = ("time", "band", "y", "x")
 CLOUDMASK_SCALE_FACTOR = 2
 CLOUDMASK_BATCHSIZE_TIME = 20
 
+
 DT_START = "2016-11-01"
 DT_END = "2024-12-31"
 SPATIAL_RES = 10
 CHUNKSIZE_TIME = 20
+CHUNKSIZE_X = 500
+CHUNKSIZE_Y = 500
 
 SCIENCE_FOLDER_NAME = "science"
 

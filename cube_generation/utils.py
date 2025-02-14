@@ -121,21 +121,23 @@ def create_utm_bounding_box(
 
 
 def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
-    rel_azimuth = cube.solar_angles.sel(angle="Azimuth") - cube.viewing_angles.sel(
-        angle="Azimuth"
-    )
-    c = c_factor.c_factor(
-        cube.solar_angles.sel(angle="Zenith"),
-        cube.viewing_angles.sel(angle="Zenith"),
+    rel_azimuth = cube.solar_angle.sel(angle="Azimuth") - cube.viewing_angle.sel(angle="Azimuth")
+    import pdb
+    pdb.set_trace()
+    c_fac = c_factor.c_factor(
+        cube.solar_angle.sel(angle="Zenith"),
+        cube.viewing_angle.sel(angle="Zenith"),
         rel_azimuth,
     )
-    c = c.interp(
+    c_fac = c_fac.rename(dict(angle_x="x", angle_y="y"))
+    c_fac = c_fac.interp(
         y=cube.y.values,
         x=cube.x.values,
         method="linear",
         kwargs={"fill_value": "extrapolate"},
     )
-    cube["s2l2a"] *= c
+
+    cube["s2l2a"] *= c_fac
     return cube
 
 
