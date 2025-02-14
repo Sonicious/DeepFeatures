@@ -12,7 +12,6 @@ import constants
 import utils
 
 
-
 def setup_cloudmask_model():
     checkpoint = torch.utils.model_zoo.load_url(constants.CLOUDMASK_MODEL_URL)
     model = smp.Unet(
@@ -27,16 +26,19 @@ def setup_cloudmask_model():
 
 
 if __name__ == "__main__":
+    with open("s3-credentials.json") as f:
+        s3_credentials = json.load(f)
+
     # initiate all data stores
     super_store = dict(
         store_team=new_data_store(
             "s3",
-            root=os.environ["S3_USER_STORAGE_BUCKET"],
-            max_depth=4,
+            root=s3_credentials["bucket"],
+            max_depth=10,
             storage_options=dict(
                 anon=False,
-                key=os.environ["S3_USER_STORAGE_KEY"],
-                secret=os.environ["S3_USER_STORAGE_SECRET"],
+                key=s3_credentials["key"],
+                secret=s3_credentials["secret"],
             ),
         ),
         store_dem=new_data_store(
@@ -74,8 +76,6 @@ if __name__ == "__main__":
         # apply BRDF correction
         cube = utils.apply_nbar(cube)
         constants.LOG.info(f"BRDF correction applied.")
-        import pdb
-        pdb.set_trace()
 
         # allpy cloud mask
         cube = get_datasets.add_cloudmask(super_store, cube)
