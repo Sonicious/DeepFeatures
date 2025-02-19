@@ -22,7 +22,7 @@ CLOUDMASK_MODEL_URL = "https://nextcloud.bgc-jena.mpg.de/s/Ti4aYdHe2m3jBHy/downl
 CLOUDMASK_BANDS = ["B02", "B03", "B04", "B8A"]
 CLOUDMASK_COORDS = ("time", "band", "y", "x")
 CLOUDMASK_SCALE_FACTOR = 2
-CLOUDMASK_BATCHSIZE_TIME = 20
+CLOUDMASK_BATCHSIZE_TIME = 10
 
 
 DT_START = "2016-11-01"

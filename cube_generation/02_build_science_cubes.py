@@ -68,16 +68,20 @@ if __name__ == "__main__":
         attrs = utils.readin_sites_parameters(
             sites_params, idx, constants.SCIENCE_FOLDER_NAME
         )
-
+            
         # get Sentinel-2 data
-        cube = get_datasets.get_s2l2a_creodias_vm(super_store, attrs)
-        constants.LOG.info(f"Sentinel-2 L2A retrieved.")
+        cube = get_datasets.get_s2l2a(super_store, attrs)
+        constants.LOG.info(f"Open Sentinel-2 L2A.")
 
         # apply BRDF correction
         cube = utils.apply_nbar(cube)
         constants.LOG.info(f"BRDF correction applied.")
 
-        # allpy cloud mask
+        # reorgnaize cube
+        cube = get_datasets.reorganize_cube(cube, attrs)
+        constants.LOG.info(f"Cube reorgnaized.")
+
+        # add cloud mask
         cube = get_datasets.add_cloudmask(super_store, cube)
         constants.LOG.info(f"Cloud mask added.")
 

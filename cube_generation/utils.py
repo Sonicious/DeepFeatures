@@ -12,6 +12,7 @@ from constants import DT_START
 from constants import DT_END
 from constants import SITES_LON_LABEL
 from constants import SITES_LAT_LABEL
+from constants import SPATIAL_RES
 from version import version
 
 
@@ -57,14 +58,13 @@ def readin_sites_parameters(
     keys_in = [
         "Ground measurement [Y/N]",
         "Protection status [Y/N]",
-        "elevation above mean sea level [m]\r\nmainly for flux towers",
+        "elevation above mean sea level [m]\nmainly for flux towers",
     ]
     keys_out = [
         "ground_measurement",
         "protection_status",
         "flux_tower_elevation",
     ]
-
     for key_in, key_out in zip(keys_in, keys_out):
         if key_in in site_params:
             cube_attrs[key_out] = site_params[key_in]
@@ -90,13 +90,15 @@ def create_utm_bounding_box(
 
     # Calculate half the size of the box in meters (5 km in each direction)
     box_size_m = box_size_km * 1000
-    half_size_m = box_size_m / 2
+    # reduce the half size by half a pixel, because xcube evaluates the values at
+    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel. 
+    half_size_m = int((box_size_m / 2) - (SPATIAL_RES / 2))
 
     # Calculate the coordinates of the bounding box corners, rounded to full meters
-    easting_min = (easting - half_size_m) // 10 * 10
-    northing_min = round(northing - half_size_m) // 10 * 10
-    easting_max = easting_min + int(box_size_m)
-    northing_max = northing_min + int(box_size_m)
+    easting_min = int(easting - half_size_m)
+    northing_min = int(northing - half_size_m)
+    easting_max = easting_min + box_size_m
+    northing_max = northing_min + box_size_m
 
     # transform the bounds to lat lon
     point_west_south = utm.to_latlon(
@@ -136,11 +138,9 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
         method="linear",
         kwargs={"fill_value": "extrapolate"},
     )
-    bands = cube["s2l2a"].band.values
-    idx = []
-    for band in c_fac.band.values:
-        idx.append(int(np.where(band == bands)[0][0]))
-    cube["s2l2a"][idx] = cube.s2l2a * c_fac
+    c_fac = c_fac.to_dataset(dim="band")
+    for var in c_fac:
+        cube[var] *= c_fac[var]
     return cube
 
 
