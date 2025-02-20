@@ -89,10 +89,10 @@ def create_utm_bounding_box(
     easting, northing, zone_number, zone_letter = utm.from_latlon(latitude, longitude)
 
     # Calculate half the size of the box in meters (5 km in each direction)
-    box_size_m = box_size_km * 1000
     # reduce the half size by half a pixel, because xcube evaluates the values at
     # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel. 
-    half_size_m = int((box_size_m / 2) - (SPATIAL_RES / 2))
+    box_size_m = box_size_km * 1000 - SPATIAL_RES
+    half_size_m = int(box_size_m / 2)
 
     # Calculate the coordinates of the bounding box corners, rounded to full meters
     easting_min = int(easting - half_size_m)
