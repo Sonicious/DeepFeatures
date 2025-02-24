@@ -43,7 +43,6 @@ def readin_sites_parameters(
         landcover_first_percentage=None,
         landcover_second=None,
         landcover_second_percentage=None,
-        protection_mask=None,
         acknowledgment="DeepFeatures project",
         contributor_name="Brockmann Consult GmbH",
         contributor_url="www.brockmann-consult.de",
@@ -51,7 +50,7 @@ def readin_sites_parameters(
         creator_name="Brockmann Consult GmbH",
         creator_url="www.brockmann-consult.de",
         institution="Brockmann Consult GmbH",
-        project="DeepExtreme",
+        project="DeepFeatures",
         publisher_email="info@brockmann-consult.de",
         publisher_name="Brockmann Consult GmbH",
     )

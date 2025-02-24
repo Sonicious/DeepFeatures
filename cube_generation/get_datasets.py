@@ -28,8 +28,7 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
     )
     ds.attrs = attrs
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
-    ds.attrs["affine_transform"] = ds.drop_vars("spatial_ref").rio.transform()
-    ds = ds.isel(x=slice(0, 1000), y=slice(0, 1000))
+    ds.attrs["affine_transform"] = ds.rio.transform()
     return ds
 
     
@@ -228,6 +227,19 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             y=constants.CHUNKSIZE_Y,
         )
     ).astype(np.uint8)
+    cube["esa_wc"].attrs = dict(
+        flag_values=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100],
+        flag_meanings=(
+            "tree_cover shrubland grassland cropland built_up "
+            "bare_sparse_vegetation snow_and_ice "
+            "permanent_water_bodies herbaceous_wetland "
+            "mangroves moss_and_lichen"
+        ),
+        flag_colors=(
+            "#006400 #ffbb22 #ffff4c #f096ff #fa0000 #b4b4b4 "
+            "#f0f0f0 #0064c8 #0096a0 #00cf75 #fae6a0"
+        ),
+    )
     attrs = {}
     attrs["home_url"] = "https://esa-worldcover.org"
     attrs["data_url"] = "https://esa-worldcover.org/en/data-access"
@@ -267,7 +279,7 @@ MF_C = 610.94
 
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     data_ids = super_store["store_team"].list_data_ids()
-    data_ids = [data_id for data_id in data_ids if "cubes/aux/era5_allvars/" in data_id]
+    data_ids = [data_id for data_id in data_ids if "cubes/aux/era5/" in data_id]
     data_ids.sort() 
     era5_steps = []
     for data_id in data_ids:

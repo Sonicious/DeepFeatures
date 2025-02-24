@@ -103,7 +103,7 @@ if __name__ == "__main__":
 
         # write final cube
         cube["band"] = cube.band.astype("str")
-        compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=0)
+        compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
         super_store["store_team"].write_data(
             cube, cube.attrs["path"], replace=True, encoding=encoding
