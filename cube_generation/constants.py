@@ -8,6 +8,7 @@ logging.basicConfig(
     format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s - %(funcName)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logging.getLogger("botocore.httpchecksum").setLevel(logging.WARNING)
 LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
@@ -21,15 +22,17 @@ CLOUDMASK_MODEL_URL = "https://nextcloud.bgc-jena.mpg.de/s/Ti4aYdHe2m3jBHy/downl
 CLOUDMASK_BANDS = ["B02", "B03", "B04", "B8A"]
 CLOUDMASK_COORDS = ("time", "band", "y", "x")
 CLOUDMASK_SCALE_FACTOR = 2
-CLOUDMASK_BATCHSIZE_TIME = 20
+CLOUDMASK_BATCHSIZE_TIME = 10
+
 
 DT_START = "2016-11-01"
-DT_END = "2024-12-01"
+DT_END = "2024-12-31"
 SPATIAL_RES = 10
 CHUNKSIZE_TIME = 20
+CHUNKSIZE_X = 500
+CHUNKSIZE_Y = 500
 
 SCIENCE_FOLDER_NAME = "science"
-SCIENCE_INDEXES = [0, 1]
 
 TRAINING_NB_CUBES = 250
 TRAINING_SIZE_BBOX = 0.9
@@ -44,6 +47,7 @@ TRAINING_LANDCOVER_DISTRIBUTION = dict(
     random=0.35,
 )
 TRAINING_FOLDER_NAME = "training"
+SCIENCE_FOLDER_NAME = "science"
 
 SITES_LAT_LABEL = "center_lat"
 SITES_LON_LABEL = "center_lon"

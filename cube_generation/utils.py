@@ -12,6 +12,7 @@ from constants import DT_START
 from constants import DT_END
 from constants import SITES_LON_LABEL
 from constants import SITES_LAT_LABEL
+from constants import SPATIAL_RES
 from version import version
 
 
@@ -42,7 +43,6 @@ def readin_sites_parameters(
         landcover_first_percentage=None,
         landcover_second=None,
         landcover_second_percentage=None,
-        protection_mask=None,
         acknowledgment="DeepFeatures project",
         contributor_name="Brockmann Consult GmbH",
         contributor_url="www.brockmann-consult.de",
@@ -50,21 +50,20 @@ def readin_sites_parameters(
         creator_name="Brockmann Consult GmbH",
         creator_url="www.brockmann-consult.de",
         institution="Brockmann Consult GmbH",
-        project="DeepExtreme",
+        project="DeepFeatures",
         publisher_email="info@brockmann-consult.de",
         publisher_name="Brockmann Consult GmbH",
     )
     keys_in = [
         "Ground measurement [Y/N]",
         "Protection status [Y/N]",
-        "elevation above mean sea level [m]\r\nmainly for flux towers",
+        "elevation above mean sea level [m]\nmainly for flux towers",
     ]
     keys_out = [
         "ground_measurement",
         "protection_status",
         "flux_tower_elevation",
     ]
-
     for key_in, key_out in zip(keys_in, keys_out):
         if key_in in site_params:
             cube_attrs[key_out] = site_params[key_in]
@@ -89,14 +88,16 @@ def create_utm_bounding_box(
     easting, northing, zone_number, zone_letter = utm.from_latlon(latitude, longitude)
 
     # Calculate half the size of the box in meters (5 km in each direction)
-    box_size_m = box_size_km * 1000
-    half_size_m = box_size_m / 2
+    # reduce the half size by half a pixel, because xcube evaluates the values at
+    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel. 
+    box_size_m = box_size_km * 1000 - SPATIAL_RES
+    half_size_m = int(box_size_m / 2)
 
     # Calculate the coordinates of the bounding box corners, rounded to full meters
-    easting_min = (easting - half_size_m) // 10 * 10
-    northing_min = round(northing - half_size_m) // 10 * 10
-    easting_max = easting_min + int(box_size_m)
-    northing_max = northing_min + int(box_size_m)
+    easting_min = int(easting - half_size_m)
+    northing_min = int(northing - half_size_m)
+    easting_max = easting_min + box_size_m
+    northing_max = northing_min + box_size_m
 
     # transform the bounds to lat lon
     point_west_south = utm.to_latlon(
@@ -120,20 +121,25 @@ def create_utm_bounding_box(
     return bounding_box
 
 
-def apply_nbar(cube: xr.Dataset, angles: xr.Dataset) -> xr.Dataset:
-    rel_azimuth = angles.sunAzimuthAngles - angles.viewAzimuthMean
-    c = c_factor.c_factor(angles.sunZenithAngles, angles.sunZenithAngles, rel_azimuth)
-    c = c.interp(
+def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
+    solar_azimuth = cube.solar_angle.sel(angle="Azimuth").drop_vars("angle")
+    viewing_azimuth = cube.viewing_angle.sel(angle="Azimuth").drop_vars("angle")
+    rel_azimuth = solar_azimuth - viewing_azimuth
+    c_fac = c_factor.c_factor(
+        cube.solar_angle.sel(angle="Zenith").drop_vars("angle"),
+        cube.viewing_angle.sel(angle="Zenith").drop_vars("angle"),
+        rel_azimuth,
+    )
+    c_fac = c_fac.rename(dict(angle_x="x", angle_y="y"))
+    c_fac = c_fac.interp(
         y=cube.y.values,
         x=cube.x.values,
         method="linear",
         kwargs={"fill_value": "extrapolate"},
     )
-    bands = cube["s2l2a"].band.values
-    idx = []
-    for band in c.band.values:
-        idx.append(int(np.where(band == bands)[0][0]))
-    cube["s2l2a"][idx] = cube.s2l2a * c
+    c_fac = c_fac.to_dataset(dim="band")
+    for var in c_fac:
+        cube[var] *= c_fac[var]
     return cube
 
 
@@ -239,16 +245,17 @@ def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
     return cube
 
 
-def delete_temp_files(super_store: dict, attrs: dict):
+def get_temp_file(attrs: dict) -> str:
+    data_id_components = attrs["path"].split("/")
+    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
+    return f"{data_id_components[0]}/temp/{'/'.join(data_id_components[1:-1])}/{fname}"
+
+
+def delete_temp_files(super_store: dict, attrs: dict) -> None:
     assert super_store["store_team"].has_data(
         attrs["path"]
     ), f"final cube not written to {attrs["path"]}"
-    data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']}_s2l2a.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/{fname}"
-    super_store["store_team"].delete_data(data_id)
-    fname = f"{attrs['site_id']}_s2l2a_angles.zarr"
-    data_id = f"{'/'.join(data_id_components[:-1])}/{fname}"
+    data_id = get_temp_file(attrs)
     super_store["store_team"].delete_data(data_id)
 
 
