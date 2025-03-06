@@ -68,7 +68,7 @@ if __name__ == "__main__":
         attrs = utils.readin_sites_parameters(
             sites_params, idx, constants.SCIENCE_FOLDER_NAME
         )
-            
+
         # get Sentinel-2 data
         cube = get_datasets.get_s2l2a(super_store, attrs)
         constants.LOG.info(f"Open Sentinel-2 L2A.")
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         constants.LOG.info(f"BRDF correction applied.")
 
         # reorgnaize cube
-        cube = get_datasets.reorganize_cube(cube, attrs)
+        cube = get_datasets.reorganize_cube(cube)
         constants.LOG.info(f"Cube reorgnaized.")
 
         # add cloud mask
