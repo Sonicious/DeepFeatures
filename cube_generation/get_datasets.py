@@ -2,7 +2,6 @@ import datetime
 
 import affine
 import numpy as np
-import pandas as pd
 import rasterio
 import torch
 import xarray as xr
@@ -31,8 +30,8 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
     ds.attrs["affine_transform"] = ds.rio.transform()
     return ds
 
-    
-def reorganize_cube(ds: xr.Dataset, attrs: dict) -> xr.Dataset:
+
+def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
     scl = ds.SCL.astype(np.uint8)
     solar_angle = ds.solar_angle.astype(np.float32)
     viewing_angle = ds.viewing_angle.astype(np.float32)
@@ -161,7 +160,7 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             y=constants.CHUNKSIZE_Y,
         ),
         format_name="zarr",
-        data_vars_only=True
+        data_vars_only=True,
     )
     name_dict = {
         "change_count": "lccs_change_count",
@@ -219,14 +218,16 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         transform=affine.Affine(*cube.attrs["affine_transform"]),
         resampling=rasterio.enums.Resampling.nearest,
     )
-    esa_wc_reproject = esa_wc_reproject.rename(dict(time="time_esa_wc"))
-    cube["esa_wc"] = esa_wc_reproject["band_1"].chunk(
-        dict(
-            time_esa_wc=esa_wc_reproject.sizes["time_esa_wc"],
-            x=constants.CHUNKSIZE_X,
-            y=constants.CHUNKSIZE_Y,
+    cube["esa_wc"] = (
+        esa_wc_reproject["band_1"]
+        .chunk(
+            dict(
+                x=constants.CHUNKSIZE_X,
+                y=constants.CHUNKSIZE_Y,
+            )
         )
-    ).astype(np.uint8)
+        .astype(np.uint8)
+    )
     cube["esa_wc"].attrs = dict(
         flag_values=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100],
         flag_meanings=(
@@ -280,7 +281,7 @@ MF_C = 610.94
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     data_ids = super_store["store_team"].list_data_ids()
     data_ids = [data_id for data_id in data_ids if "cubes/aux/era5/" in data_id]
-    data_ids.sort() 
+    data_ids.sort()
     era5_steps = []
     for data_id in data_ids:
         era5 = super_store["store_team"].open_data(data_id)
@@ -448,18 +449,13 @@ def _get_dem_file_paths(bbox: list[float]) -> list[str]:
 
 
 def _load_esa_wc_data(super_store: dict, bbox: list[float]) -> (xr.Dataset, list[str]):
-    files_2020, files_2021 = _get_esa_wc_file_paths(bbox)
+    files_2021 = _get_esa_wc_file_paths(bbox)
     dss = []
-    for files in [files_2020, files_2021]:
-        dss_year = []
-        for file in files:
-            dss_year.append(super_store["store_esa_wc"].open_data(file))
-        ds = xr.combine_by_coords(dss_year, combine_attrs="override")
-        dss.append(ds)
-    ds = xr.concat(dss, dim="time", join="exact")
-    custom_times = [pd.Timestamp("2020-01-01 00:00"), pd.Timestamp("2021-01-01 00:00")]
-    ds = ds.assign_coords(coords=dict(time=custom_times))
-    return ds, files_2020 + files_2021
+    for file in files_2021:
+        dss.append(super_store["store_esa_wc"].open_data(file))
+    ds = xr.combine_by_coords(dss, combine_attrs="override")
+    ds.attrs["date"] = "2021-01-01"
+    return ds, files_2021
 
 
 def _get_esa_wc_lon_lat(lon: float, lat: float) -> (str, str):
@@ -482,28 +478,22 @@ def _get_esa_wc_lon_lat(lon: float, lat: float) -> (str, str):
     return lat_str, lon_str
 
 
-def _get_esa_wc_file_paths(bbox: list[float]) -> (list[str], list[str]):
+def _get_esa_wc_file_paths(bbox: list[float]) -> list[str]:
     points = [
         (bbox[0], bbox[1]),
         (bbox[2], bbox[1]),
         (bbox[2], bbox[3]),
         (bbox[0], bbox[3]),
     ]
-    files_2020 = []
     files_2021 = []
     for point in points:
         lat_str, lon_str = _get_esa_wc_lon_lat(point[0], point[1])
-        file_2020 = (
-            f"v100/2020/map/ESA_WorldCover_10m_2020_v100_{lat_str}{lon_str}_Map.tif"
-        )
         file_2021 = (
             f"v200/2021/map/ESA_WorldCover_10m_2021_v200_{lat_str}{lon_str}_Map.tif"
         )
-        if file_2020 not in files_2020:
-            files_2020.append(file_2020)
         if file_2021 not in files_2021:
             files_2021.append(file_2021)
-    return files_2020, files_2021
+    return files_2021
 
 
 def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
