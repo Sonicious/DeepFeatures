@@ -12,6 +12,7 @@ logging.getLogger("botocore.httpchecksum").setLevel(logging.WARNING)
 LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
+PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2 = os.path.join(DIR, "sites_science_sen2.csv")
 PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science.csv")
 PATH_SITES_PARAMETERS_TRAINING = os.path.join(DIR, "sites_training.csv")
 
@@ -31,8 +32,6 @@ SPATIAL_RES = 10
 CHUNKSIZE_TIME = 20
 CHUNKSIZE_X = 500
 CHUNKSIZE_Y = 500
-
-SCIENCE_FOLDER_NAME = "science"
 
 TRAINING_NB_CUBES = 250
 TRAINING_SIZE_BBOX = 0.9
