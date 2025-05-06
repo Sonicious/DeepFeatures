@@ -3,23 +3,11 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.10
-  - boto3
-  - dask
-  - numpy
-  - libgdal-jp2openjpeg
-  - rioxarray
-  - requests
-  - pandas
-  - pystac
-  - pyproj
-  - pystac-client
   - segmentation-models-pytorch
   - sen2nbar
-  - shapely
   - spyndex
   - utm
-  - xarray
-  - xmltodict
   - xcube >= 1.8.1
   - xcube-cds >=0.9.3
+  - xcube-stac >=0.2.0
   - zappend
