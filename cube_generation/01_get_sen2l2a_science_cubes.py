@@ -14,7 +14,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
     def _get_s2l2a_year(time_range: list[str]):
-        data_id_mod = data_id.replace(".zarr", f"{time_range[1][:4]}.zarr")
+        data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
         if not super_store["store_team"].has_data(data_id):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
