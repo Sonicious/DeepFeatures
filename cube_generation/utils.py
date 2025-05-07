@@ -1,6 +1,6 @@
+import copy
 import datetime
 
-import numpy as np
 import pandas as pd
 from sen2nbar import c_factor
 import spyndex
