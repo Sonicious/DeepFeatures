@@ -1,6 +1,6 @@
+import copy
 import datetime
 
-import numpy as np
 import pandas as pd
 from sen2nbar import c_factor
 import spyndex
@@ -89,7 +89,7 @@ def create_utm_bounding_box(
 
     # Calculate half the size of the box in meters (5 km in each direction)
     # reduce the half size by half a pixel, because xcube evaluates the values at
-    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel. 
+    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel.
     box_size_m = box_size_km * 1000 - SPATIAL_RES
     half_size_m = int(box_size_m / 2)
 

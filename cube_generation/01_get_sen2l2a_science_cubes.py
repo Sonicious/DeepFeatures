@@ -9,13 +9,12 @@ import utils
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
     bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lat"], box_size_km=10
+        site_params["lat"], site_params["lon"], box_size_km=10
     )
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
-    def _get_s2l2a_year(time_range: list[str]):
-        data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
-        if not super_store["store_team"].has_data(data_id):
+    def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
+        if not super_store["store_team"].has_data(data_id_mod):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
                 data_id="sentinel-2-l2a",
@@ -59,7 +58,20 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
         ["2024-01-01", "2024-12-31"],
     ]
     for time_range in time_ranges:
-        _get_s2l2a_year(time_range)
+        data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
+        for attempt in range(1, 4):
+            try:
+                _get_s2l2a_year(time_range, data_id_mod)
+                break
+            except Exception as e:
+                if super_store["store_team"].has_data(data_id_mod):
+                    super_store["store_team"].delete_data(data_id_mod)
+                constants.LOG.error(f"Attempt {attempt} failed: {e}")
+                if attempt == 3:
+                    constants.LOG.info(
+                        f"Cube {data_id_mod} tried to retrieve {attempt} times. "
+                        f"We go on..."
+                    )
 
 
 if __name__ == "__main__":
@@ -81,7 +93,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
-    for idx in range(0, 1):
+    for idx in range(0, 10):
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)
