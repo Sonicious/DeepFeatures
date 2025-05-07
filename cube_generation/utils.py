@@ -254,7 +254,7 @@ def get_temp_file(attrs: dict) -> str:
 def delete_temp_files(super_store: dict, attrs: dict) -> None:
     assert super_store["store_team"].has_data(
         attrs["path"]
-    ), f"final cube not written to {attrs["path"]}"
+    ), f"final cube not written to {attrs['path']}"
     data_id = get_temp_file(attrs)
     super_store["store_team"].delete_data(data_id)
 
