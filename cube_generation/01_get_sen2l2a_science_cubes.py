@@ -62,6 +62,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
         for attempt in range(1, 4):
             try:
                 _get_s2l2a_year(time_range, data_id_mod)
+                break
             except Exception as e:
                 if super_store["store_team"].has_data(data_id_mod):
                     super_store["store_team"].delete_data(data_id_mod)
