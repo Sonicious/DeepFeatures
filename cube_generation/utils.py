@@ -89,7 +89,7 @@ def create_utm_bounding_box(
 
     # Calculate half the size of the box in meters (5 km in each direction)
     # reduce the half size by half a pixel, because xcube evaluates the values at
-    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel. 
+    # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel.
     box_size_m = box_size_km * 1000 - SPATIAL_RES
     half_size_m = int(box_size_m / 2)
 
@@ -254,7 +254,7 @@ def get_temp_file(attrs: dict) -> str:
 def delete_temp_files(super_store: dict, attrs: dict) -> None:
     assert super_store["store_team"].has_data(
         attrs["path"]
-    ), f"final cube not written to {attrs["path"]}"
+    ), f"final cube not written to {attrs['path']}"
     data_id = get_temp_file(attrs)
     super_store["store_team"].delete_data(data_id)
 
