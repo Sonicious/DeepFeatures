@@ -9,7 +9,7 @@ import utils
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
     bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lat"], box_size_km=10
+        site_params["lat"], site_params["lon"], box_size_km=10
     )
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
-    for idx in range(0, 1):
+    for idx in range(0, 10):
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)
