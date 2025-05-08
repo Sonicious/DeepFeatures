@@ -28,9 +28,16 @@ def readin_sites_parameters(
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
     else:
         bbox = create_utm_bounding_box(lat, lon)
+    if folder_name == "science":
+        cube_type = "ScienceCube"
+    elif folder_name == "training":
+        cube_type = "TrainingCube"
+    else:
+        raise NameError(
+            f"<folder_name> needs to be either 'science' or 'training', but is {folder_name}."
+        )
     cube_attrs = dict(
-        site_id=index,
-        path=f"cubes/{folder_name}/{version}/{index:06}.zarr",
+        id=index,
         center_wgs84=bbox["center_wgs84"],
         center_utm=bbox["center_utm"],
         bbox_wgs84=bbox["bbox_wgs84"],
@@ -44,32 +51,17 @@ def readin_sites_parameters(
         landcover_second=None,
         landcover_second_percentage=None,
         acknowledgment="DeepFeatures project",
-        contributor_name="Brockmann Consult GmbH",
-        contributor_url="www.brockmann-consult.de",
+        creator_name=["Leipzig University", "Brockmann Consult GmbH"],
         creator_email="info@brockmann-consult.de",
-        creator_name="Brockmann Consult GmbH",
-        creator_url="www.brockmann-consult.de",
-        institution="Brockmann Consult GmbH",
+        creator_url=[
+            "https://www.uni-leipzig.de/",
+            "https://www.brockmann-consult.de/",
+        ],
+        institution=["Leipzig University", "Brockmann Consult GmbH"],
         project="DeepFeatures",
-        publisher_email="info@brockmann-consult.de",
-        publisher_name="Brockmann Consult GmbH",
+        cube_type=cube_type,
+        Conventions="CF-1.8",
     )
-    keys_in = [
-        "Ground measurement [Y/N]",
-        "Protection status [Y/N]",
-        "elevation above mean sea level [m]\nmainly for flux towers",
-    ]
-    keys_out = [
-        "ground_measurement",
-        "protection_status",
-        "flux_tower_elevation",
-    ]
-    for key_in, key_out in zip(keys_in, keys_out):
-        if key_in in site_params:
-            cube_attrs[key_out] = site_params[key_in]
-        else:
-            cube_attrs[key_out] = None
-
     if "time_range_start" in site_params:
         cube_attrs["time_range_start"] = site_params["time_range_start"]
     else:
@@ -247,7 +239,7 @@ def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
 
 def get_temp_file(attrs: dict) -> str:
     data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
+    fname = f"{attrs['id']:06}_s2l2a.zarr"
     return f"{data_id_components[0]}/temp/{'/'.join(data_id_components[1:-1])}/{fname}"
 
 

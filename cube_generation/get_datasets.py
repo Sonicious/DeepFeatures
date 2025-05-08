@@ -9,22 +9,28 @@ from xcube.core.geom import clip_dataset_by_geometry
 from xcube.core.chunk import chunk_dataset
 
 import constants
-import utils
+from version import version
 
 
 def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
-    data_id = utils.get_temp_file(attrs)
+    data_id = (
+        f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{attrs['id']:03}.zarr"
+    )
     dss = []
     for year in range(2017, 2025):
-        data_id_year = data_id.replace(".zarr", f"{year}.zarr")
+        data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
         dss.append(super_store["store_team"].open_data(data_id_year))
     xcube_stac_attrs = dss[0].attrs
     for ds in dss[1:]:
         xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
     ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
-    xcube_stac_attrs["data_url"] = (
+    xcube_stac_attrs["source"] = (
         "https://documentation.dataspace.copernicus.eu/APIs/S3.html"
     )
+    xcube_stac_attrs["institution"] = "Copernicus Data Space Ecosystem"
+    xcube_stac_attrs["standard_name"] = "sentinel2_l2a"
+    xcube_stac_attrs["long_name"] = "Sentinel-2 L2A prduct"
+    xcube_stac_attrs["grid_mapping"] = "spatial_ref"
     ds.attrs = attrs
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
     ds.attrs["affine_transform"] = ds.rio.transform()
@@ -70,23 +76,29 @@ def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
     )
     cube = xr.Dataset()
     cube["s2l2a"] = s2l2a
+    sen2_attrs = ds.attrs.pop("xcube_stac_attrs")
+    cube["s2l2a"].attrs = sen2_attrs
     cube["solar_angle"] = solar_angle
+    cube["solar_angle"].attrs = sen2_attrs
     cube["viewing_angle"] = viewing_angle
+    cube["viewing_angle"].attrs = sen2_attrs
     cube["scl"] = scl
-    cube["scl"].attrs = dict(
-        flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        flag_meanings=(
-            "no_data saturated_or_defective_pixel topographic_casted_shadows "
-            "cloud_shadows vegetation not_vegetation water "
-            "unclassified cloud_medium_probability "
-            "cloud_high_probability thin_cirrus snow_or_ice"
-        ),
-        flag_colors=(
-            "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
-            "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
-        ),
+    cube["scl"].attrs = sen2_attrs.update(
+        dict(
+            description="Scene classification layer of the Sentinel-2 L2A product.",
+            flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            flag_meanings=(
+                "no_data saturated_or_defective_pixel topographic_casted_shadows "
+                "cloud_shadows vegetation not_vegetation water "
+                "unclassified cloud_medium_probability "
+                "cloud_high_probability thin_cirrus snow_or_ice"
+            ),
+            flag_colors=(
+                "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
+                "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
+            ),
+        )
     )
-    cube.attrs = ds.attrs
     return cube
 
 
@@ -112,18 +124,18 @@ def add_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     )
     cube["cloud_mask"] = cloud_mask
     cube["cloud_mask"].attrs = dict(
+        standard_name="cloudmask",
+        long_name=(
+            "Cloudmask generated using an AI approach following the implementation "
+            "of EarthNet Minicuber, based on CloudSEN12."
+        ),
+        grid_mapping="spatial_ref",
+        source="https://github.com/earthnet2021/earthnet-minicuber",
+        institution="https://cloudsen12.github.io/",
         flag_values=[0, 1, 2, 3],
         flag_meanings="clear thick_cloud thin_cloud cloud_shadow",
         flag_colors="#000000 #FFFFFF #D3D3D3 #636363",
     )
-    attrs = {}
-    attrs["description"] = (
-        "Cloudmask generated using an AI approach following the implementation "
-        "of EarthNet Minicuber, based on CloudSEN12."
-    )
-    attrs["home_url"] = "https://github.com/earthnet2021/earthnet-minicuber"
-    attrs["cloudsen12_url"] = "https://cloudsen12.github.io/"
-    cube.attrs["cloud_mask_attrs"] = attrs
     return cube
 
 
@@ -162,6 +174,17 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         format_name="zarr",
         data_vars_only=True,
     )
+    attrs = lc_reproject.attrs
+    attrs["source"] = (
+        "https://cds.climate.copernicus.eu/datasets/satellite-land-cover?tab=overview"
+    )
+    attrs["institution"] = "Copernicus Climate Data Store"
+    attrs["license"] = (
+        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/licences"
+        "/satellite-land-cover/satellite-land-cover_8423d13d3dfd95bbeca92d935551"
+        "6f21de90d9b40083a915ead15a189d6120fa.pdf"
+    )
+    attrs["grid_mapping"] = "spatial_ref"
     name_dict = {
         "change_count": "lccs_change_count",
         "current_pixel_state": "lccs_current_pixel_state",
@@ -171,21 +194,7 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     }
     for key, val in name_dict.items():
         cube[val] = lc_reproject[key].astype(lc[key].dtype)
-    attrs = lc_reproject.attrs
-    attrs["home_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "satellite-land-cover?tab=overview"
-    )
-    attrs["data_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "satellite-land-cover?tab=download"
-    )
-    attrs["license_url"] = (
-        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/licences"
-        "/satellite-land-cover/satellite-land-cover_8423d13d3dfd95bbeca92d935551"
-        "6f21de90d9b40083a915ead15a189d6120fa.pdf"
-    )
-    cube.attrs["lccs_attrs"] = attrs
+        cube[val].attrs = attrs
 
     # fill in attributes regarding land cover classification
     lc_first = []
@@ -229,6 +238,13 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         .astype(np.uint8)
     )
     cube["esa_wc"].attrs = dict(
+        standard_name="esa_world_cover",
+        long_name="ESA World Cover",
+        source="https://esa-worldcover.org",
+        license="https://creativecommons.org/licenses/by/4.0/",
+        institution="VITO Remote Sensing",
+        grid_mapping="spatial_ref",
+        file_names=files,
         flag_values=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100],
         flag_meanings=(
             "tree_cover shrubland grassland cropland built_up "
@@ -241,12 +257,7 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             "#f0f0f0 #0064c8 #0096a0 #00cf75 #fae6a0"
         ),
     )
-    attrs = {}
-    attrs["home_url"] = "https://esa-worldcover.org"
-    attrs["data_url"] = "https://esa-worldcover.org/en/data-access"
-    attrs["license_url"] = "https://creativecommons.org/licenses/by/4.0/"
-    attrs["files"] = files
-    cube.attrs["esa_wc_attrs"] = attrs
+
     return cube
 
 
@@ -266,11 +277,23 @@ ERA5_AGGREGATION_ALL = [
     "t2m",
     "u10n",
     "v10n",
-    "rh",
     "vpd",
+    "rh",
+    "fal",
 ]
 ERA5_AGGREGATION_MEAN_MEDIAN_STD = ["lai_hv", "lai_lv"]
-ERA5_AGGREGATION_SUM = ["e", "pev", "slhf", "sshf", "ssr", "ssrd", "str", "strd", "tp"]
+ERA5_AGGREGATION_SUM = [
+    "e",
+    "pev",
+    "slhf",
+    "sshf",
+    "ssr",
+    "ssrd",
+    "str",
+    "strd",
+    "tp",
+    "ro",
+]
 # ref Magnus Formula for vapor pressure (Gleichung 6)
 # https://journals.ametsoc.org/view/journals/bams/86/2/bams-86-2-225.xml
 MF_A = 17.625
@@ -326,24 +349,26 @@ def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     era5_final = xr.concat(era5_steps, "time_era5")
     era5_final = era5_final.chunk(chunks=dict(time_era5=era5_final.sizes["time_era5"]))
     era5_final = era5_final.astype(np.float32)
-    cube = cube.update(era5_final)
 
-    attrs = {}
-    attrs["home_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "reanalysis-era5-single-levels?tab=overview"
-    )
-    attrs["data_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "reanalysis-era5-single-levels?tab=download"
-    )
-    attrs["license_url"] = (
-        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/"
-        "licences/licence-to-use-copernicus-products/licence-to-use-"
-        "copernicus-products_b4b9451f54cffa16ecef5c912c9cebd6979925a95"
-        "6e3fa677976e0cf198c2c18.pdf"
-    )
-    cube.attrs["era5_attrs"] = attrs
+    for data_var in era5_final.data_vars:
+        era5_final[data_var].attrs = dict(
+            standard_name=era5_final[data_var].attrs["standard_name"],
+            long_name=era5_final[data_var].attrs["long_name"],
+            units=era5_final[data_var].attrs["units"],
+            institution="Copernicus Climate Data Store",
+            source=(
+                "https://cds.climate.copernicus.eu/datasets/"
+                "reanalysis-era5-land?tab=overview"
+            ),
+            license=(
+                "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/"
+                "licences/licence-to-use-copernicus-products/licence-to-use-"
+                "copernicus-products_b4b9451f54cffa16ecef5c912c9cebd6979925a95"
+                "6e3fa677976e0cf198c2c18.pdf"
+            ),
+        )
+
+    cube = cube.update(era5_final)
 
     return cube
 
@@ -364,14 +389,18 @@ def add_reprojected_dem(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             y=constants.CHUNKSIZE_Y,
         )
     )
-    attrs = dem_reproject.attrs
-    attrs["home_url"] = "https://registry.opendata.aws/copernicus-dem/"
-    attrs["data_url"] = "https://registry.opendata.aws/copernicus-dem/"
-    attrs["license_url"] = (
-        "https://spacedata.copernicus.eu/documents/20126/0/"
-        "CSCDA_ESA_Mission-specific+Annex.pdf"
+    cube["dem"].attrs = dict(
+        standard_name="copernicus_dem_30m",
+        long_name="Copernicus Digital Elevation Model (DEM) at 30m",
+        units="m",
+        institution="Synergise",
+        source="https://registry.opendata.aws/copernicus-dem/",
+        license=(
+            "https://spacedata.copernicus.eu/documents/20126/0/"
+            "CSCDA_ESA_Mission-specific+Annex.pdf"
+        ),
+        grid_mapping="spatial_ref",
     )
-    cube.attrs["dem_attrs"] = attrs
     return cube
 
 

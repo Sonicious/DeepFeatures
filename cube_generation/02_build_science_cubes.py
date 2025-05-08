@@ -1,5 +1,4 @@
 import json
-import os
 
 import pandas as pd
 import segmentation_models_pytorch as smp
@@ -10,6 +9,7 @@ import zarr
 import get_datasets
 import constants
 import utils
+from version import version
 
 
 def setup_cloudmask_model():
@@ -105,8 +105,11 @@ if __name__ == "__main__":
         cube["band"] = cube.band.astype("str")
         compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
+        path = (
+            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr",
+        )
         super_store["store_team"].write_data(
-            cube, cube.attrs["path"], replace=True, encoding=encoding
+            cube, path, replace=True, encoding=encoding
         )
         constants.LOG.info(f"Final cube written to {cube.attrs['path']}.")
 
