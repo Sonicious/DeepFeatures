@@ -22,8 +22,8 @@ def readin_sites_parameters(
     folder_name: str,
 ) -> dict:
     site_params = sites_params.loc[index]
-    lat = float(site_params[SITES_LAT_LABEL])
-    lon = float(site_params[SITES_LON_LABEL])
+    lat = float(site_params["lat"])
+    lon = float(site_params["lon"])
     if "size_bbox" in site_params:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
     else:

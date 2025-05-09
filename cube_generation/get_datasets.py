@@ -12,15 +12,35 @@ import constants
 from version import version
 
 
-def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
+def get_s2l2a(
+    super_store: dict, attrs: dict, check_nan: bool = True
+) -> xr.Dataset | None:
     data_id = (
         f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{attrs['id']:03}.zarr"
     )
     dss = []
     for year in range(2017, 2025):
         data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
-        dss.append(super_store["store_team"].open_data(data_id_year))
+        if not super_store["store_team"].has_data(data_id_year):
+            constants.LOG.info(
+                f"Dataset with data ID {data_id_year} does not exists. We "
+                f"discard the data cube generation for {data_id} for now."
+            )
+            return None
+        ds = super_store["store_team"].open_data(data_id_year)
+        if check_nan:
+            constants.LOG.info(
+                f"Check dataset with data ID {data_id_year} for nan values"
+            )
+            if not _assert_dataset_nan(ds):
+                constants.LOG.info(
+                    f"More than 10% nan found in dataset with data ID {data_id_year}. "
+                    f"We discard the data cube generation for {data_id} for now."
+                )
+                return None
+        dss.append(ds)
     xcube_stac_attrs = dss[0].attrs
+
     for ds in dss[1:]:
         xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
     ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
@@ -136,6 +156,12 @@ def add_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         flag_meanings="clear thick_cloud thin_cloud cloud_shadow",
         flag_colors="#000000 #FFFFFF #D3D3D3 #636363",
     )
+    return cube
+
+
+def get_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
+    path = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}_cloudmask.zarr"
+    cube["cloud_mask"] = super_store["team_store"].open_data(path)
     return cube
 
 
@@ -531,3 +557,14 @@ def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
     rename_dict["time"] = "time_era5"
     era5_mode = era5_mode.rename(rename_dict)
     return era5_mode
+
+
+def _assert_dataset_nan(ds: xr.Dataset) -> bool:
+    for key in list(ds.keys()):
+        array = ds[key].values.ravel()
+        null_size = array[np.isnan(array)].size
+        perc = (null_size / array.size) * 100
+        constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
+        if perc > 10.0:
+            return False
+    return True

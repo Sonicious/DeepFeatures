@@ -70,7 +70,9 @@ if __name__ == "__main__":
         )
 
         # get Sentinel-2 data
-        cube = get_datasets.get_s2l2a(super_store, attrs)
+        cube = get_datasets.get_s2l2a(super_store, attrs, check_nan=False)
+        if cube is None:
+            continue
         constants.LOG.info(f"Open Sentinel-2 L2A.")
 
         # apply BRDF correction
@@ -82,7 +84,7 @@ if __name__ == "__main__":
         constants.LOG.info(f"Cube reorgnaized.")
 
         # add cloud mask
-        cube = get_datasets.add_cloudmask(super_store, cube)
+        cube = get_datasets.get_cloudmask(super_store, cube)
         constants.LOG.info(f"Cloud mask added.")
 
         # add DEM
@@ -111,7 +113,7 @@ if __name__ == "__main__":
         super_store["store_team"].write_data(
             cube, path, replace=True, encoding=encoding
         )
-        constants.LOG.info(f"Final cube written to {cube.attrs['path']}.")
+        constants.LOG.info(f"Final cube written to {path}.")
 
         # # delete temp directory
         # utils.delete_temp_files(super_store, attrs)
