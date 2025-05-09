@@ -10,8 +10,6 @@ import xarray as xr
 from constants import BANDID_TRANSLATOR
 from constants import DT_START
 from constants import DT_END
-from constants import SITES_LON_LABEL
-from constants import SITES_LAT_LABEL
 from constants import SPATIAL_RES
 from version import version
 
