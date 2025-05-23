@@ -77,9 +77,11 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
 if __name__ == "__main__":
     with open("s3-credentials.json") as f:
         s3_credentials = json.load(f)
+    with open("cdse-credentials.json") as f:
+        cdse_credentails = json.load(f)
 
     super_store = dict(
-        store_stac=new_data_store("stac-cdse", stack_mode=True, creodias_vm=True),
+        store_stac=new_data_store("stac-cdse", stack_mode=True, **cdse_credentails),
         store_team=new_data_store(
             "s3",
             root=s3_credentials["bucket"],

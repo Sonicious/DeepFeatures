@@ -1,5 +1,4 @@
 import json
-import os
 
 import pandas as pd
 import segmentation_models_pytorch as smp
@@ -10,6 +9,7 @@ import zarr
 import get_datasets
 import constants
 import utils
+from version import version
 
 
 def setup_cloudmask_model():
@@ -61,16 +61,27 @@ if __name__ == "__main__":
     )
 
     # loop over sites
-    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
-    for idx in range(0, 1):
+    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
+    for idx in range(0, 71):
         constants.LOG.info(f"Generation of cube {idx} started.")
+
+        path = (
+            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
+        )
+        if super_store["store_team"].has_data(path):
+            constants.LOG.info(f"Cube {path} already generated.")
+            continue
+            
+        
         # get attributes of cube
         attrs = utils.readin_sites_parameters(
             sites_params, idx, constants.SCIENCE_FOLDER_NAME
         )
 
         # get Sentinel-2 data
-        cube = get_datasets.get_s2l2a(super_store, attrs)
+        cube = get_datasets.get_s2l2a(super_store, attrs, check_nan=False)
+        if cube is None:
+            continue
         constants.LOG.info(f"Open Sentinel-2 L2A.")
 
         # apply BRDF correction
@@ -82,7 +93,9 @@ if __name__ == "__main__":
         constants.LOG.info(f"Cube reorgnaized.")
 
         # add cloud mask
-        cube = get_datasets.add_cloudmask(super_store, cube)
+        cube = get_datasets.get_cloudmask(super_store, cube)
+        if cube is None:
+            continue
         constants.LOG.info(f"Cloud mask added.")
 
         # add DEM
@@ -100,15 +113,25 @@ if __name__ == "__main__":
         # add ERA5
         cube = get_datasets.add_era5(super_store, cube)
         constants.LOG.info(f"ERA5 data added.")
+        
+        # add grid_mapping to encoding
+        for var in cube.data_vars:
+            if 'grid_mapping' in cube[var].attrs:
+                del cube[var].attrs['grid_mapping']
+            if 'grid_mapping' in cube[var].encoding:
+                del cube[var].encoding['grid_mapping']
+            if cube[var].dims[-2:] == ("y", "x"):
+                cube[var].attrs['grid_mapping'] = "spatial_ref"
+        constants.LOG.info(f"Grid mapping added to attrs.")
 
         # write final cube
         cube["band"] = cube.band.astype("str")
         compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
         super_store["store_team"].write_data(
-            cube, cube.attrs["path"], replace=True, encoding=encoding
+            cube, path, replace=True, encoding=encoding
         )
-        constants.LOG.info(f"Final cube written to {cube.attrs['path']}.")
+        constants.LOG.info(f"Final cube written to {path}.")
 
         # # delete temp directory
         # utils.delete_temp_files(super_store, attrs)

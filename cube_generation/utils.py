@@ -13,6 +13,7 @@ from constants import DT_END
 from constants import SITES_LON_LABEL
 from constants import SITES_LAT_LABEL
 from constants import SPATIAL_RES
+from constants import LOG
 from version import version
 
 
@@ -22,15 +23,22 @@ def readin_sites_parameters(
     folder_name: str,
 ) -> dict:
     site_params = sites_params.loc[index]
-    lat = float(site_params[SITES_LAT_LABEL])
-    lon = float(site_params[SITES_LON_LABEL])
+    lat = float(site_params["lat"])
+    lon = float(site_params["lon"])
     if "size_bbox" in site_params:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
     else:
         bbox = create_utm_bounding_box(lat, lon)
+    if folder_name == "science":
+        cube_type = "ScienceCube"
+    elif folder_name == "training":
+        cube_type = "TrainingCube"
+    else:
+        raise NameError(
+            f"<folder_name> needs to be either 'science' or 'training', but is {folder_name}."
+        )
     cube_attrs = dict(
-        site_id=index,
-        path=f"cubes/{folder_name}/{version}/{index:06}.zarr",
+        id=index,
         center_wgs84=bbox["center_wgs84"],
         center_utm=bbox["center_utm"],
         bbox_wgs84=bbox["bbox_wgs84"],
@@ -44,32 +52,17 @@ def readin_sites_parameters(
         landcover_second=None,
         landcover_second_percentage=None,
         acknowledgment="DeepFeatures project",
-        contributor_name="Brockmann Consult GmbH",
-        contributor_url="www.brockmann-consult.de",
+        creator_name=["Leipzig University", "Brockmann Consult GmbH"],
         creator_email="info@brockmann-consult.de",
-        creator_name="Brockmann Consult GmbH",
-        creator_url="www.brockmann-consult.de",
-        institution="Brockmann Consult GmbH",
+        creator_url=[
+            "https://www.uni-leipzig.de/",
+            "https://www.brockmann-consult.de/",
+        ],
+        institution=["Leipzig University", "Brockmann Consult GmbH"],
         project="DeepFeatures",
-        publisher_email="info@brockmann-consult.de",
-        publisher_name="Brockmann Consult GmbH",
+        cube_type=cube_type,
+        Conventions="CF-1.8",
     )
-    keys_in = [
-        "Ground measurement [Y/N]",
-        "Protection status [Y/N]",
-        "elevation above mean sea level [m]\nmainly for flux towers",
-    ]
-    keys_out = [
-        "ground_measurement",
-        "protection_status",
-        "flux_tower_elevation",
-    ]
-    for key_in, key_out in zip(keys_in, keys_out):
-        if key_in in site_params:
-            cube_attrs[key_out] = site_params[key_in]
-        else:
-            cube_attrs[key_out] = None
-
     if "time_range_start" in site_params:
         cube_attrs["time_range_start"] = site_params["time_range_start"]
     else:
@@ -90,7 +83,7 @@ def create_utm_bounding_box(
     # Calculate half the size of the box in meters (5 km in each direction)
     # reduce the half size by half a pixel, because xcube evaluates the values at
     # the center of a pixel. Otherwise we get 1001x1001pixels instead of 1000x1000 pixel.
-    box_size_m = box_size_km * 1000 - SPATIAL_RES
+    box_size_m = box_size_km * 1000
     half_size_m = int(box_size_m / 2)
 
     # Calculate the coordinates of the bounding box corners, rounded to full meters
@@ -139,7 +132,23 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
     )
     c_fac = c_fac.to_dataset(dim="band")
     for var in c_fac:
+        temp = cube[var] * c_fac[var]
+        num_times = 50
+        temp_nan_count = temp.isel(time=slice(0, num_times)).isnull().sum().values
+        perc = temp_nan_count / temp.isel(time=slice(0, num_times)).size * 100
+
+        if perc > 10:
+            var_nan_count = cube[var].isel(time=slice(0, 100)).isnull().sum().values
+            if temp_nan_count > 2 * var_nan_count:
+                LOG.info(
+                    "Too many nan values in c-factor during BRDF correction. "
+                    f"Nan count is incresed from {var_nan_count} to {temp_nan_count}. "
+                    f"BRDF correction is discarded for {var}."
+                )
+                continue
+        
         cube[var] *= c_fac[var]
+            
     return cube
 
 
@@ -247,7 +256,7 @@ def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
 
 def get_temp_file(attrs: dict) -> str:
     data_id_components = attrs["path"].split("/")
-    fname = f"{attrs['site_id']:06}_s2l2a.zarr"
+    fname = f"{attrs['id']:06}_s2l2a.zarr"
     return f"{data_id_components[0]}/temp/{'/'.join(data_id_components[1:-1])}/{fname}"
 
 

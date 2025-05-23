@@ -9,22 +9,57 @@ from xcube.core.geom import clip_dataset_by_geometry
 from xcube.core.chunk import chunk_dataset
 
 import constants
-import utils
+from version import version
 
 
-def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
-    data_id = utils.get_temp_file(attrs)
+def get_s2l2a(
+    super_store: dict, attrs: dict, check_nan: bool = True
+) -> xr.Dataset | None:
+    data_id = (
+        f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{attrs['id']:03}.zarr"
+    )
     dss = []
     for year in range(2017, 2025):
-        data_id_year = data_id.replace(".zarr", f"{year}.zarr")
-        dss.append(super_store["store_team"].open_data(data_id_year))
-    xcube_stac_attrs = dss[0].attrs
-    for ds in dss[1:]:
-        xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
-    ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
-    xcube_stac_attrs["data_url"] = (
+        data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
+        if not super_store["store_team"].has_data(data_id_year):
+            constants.LOG.info(
+                f"Dataset with data ID {data_id_year} does not exists. We "
+                f"discard the data cube generation for {data_id} for now."
+            )
+            return None
+    for year in range(2017, 2025):
+        data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
+        ds = super_store["store_team"].open_data(data_id_year)
+        if check_nan:
+            constants.LOG.info(
+                f"Check dataset with data ID {data_id_year} for nan values"
+            )
+            threshold = 10
+            if not _assert_dataset_nan(ds, threshold):
+                constants.LOG.info(
+                    f"More than {threshold}% nan found in dataset with data ID "
+                    f"{data_id_year}. We discard the data cube generation "
+                    f"for {data_id} for now."
+                )
+                return None
+        dss.append(ds)
+    
+    # add attributes
+    xcube_stac_attrs = {}
+    xcube_stac_attrs["source"] = (
         "https://documentation.dataspace.copernicus.eu/APIs/S3.html"
     )
+    xcube_stac_attrs["institution"] = "Copernicus Data Space Ecosystem"
+    xcube_stac_attrs["standard_name"] = "sentinel2_l2a"
+    xcube_stac_attrs["long_name"] = "Sentinel-2 L2A prduct"
+    xcube_stac_attrs["stac_item_ids"] = dss[0].attrs["stac_item_ids"]
+    xcube_stac_attrs["stac_catalog_url"] = dss[0].attrs["stac_catalog_url"]
+    for ds in dss[1:]:
+        xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
+        
+    # concatenate datasets
+    ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
+
     ds.attrs = attrs
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
     ds.attrs["affine_transform"] = ds.rio.transform()
@@ -32,6 +67,7 @@ def get_s2l2a(super_store: dict, attrs: dict) -> xr.Dataset:
 
 
 def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
+    ds = ds.isel(x=slice(0, 1000), y=slice(0, 1000))
     scl = ds.SCL.astype(np.uint8)
     solar_angle = ds.solar_angle.astype(np.float32)
     viewing_angle = ds.viewing_angle.astype(np.float32)
@@ -69,24 +105,33 @@ def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
         )
     )
     cube = xr.Dataset()
+    cube_attrs = ds.attrs
+    sen2_attrs = cube_attrs.pop("xcube_stac_attrs")
     cube["s2l2a"] = s2l2a
+    cube["s2l2a"].attrs = sen2_attrs
     cube["solar_angle"] = solar_angle
+    cube["solar_angle"].attrs = sen2_attrs
     cube["viewing_angle"] = viewing_angle
+    cube["viewing_angle"].attrs = sen2_attrs
     cube["scl"] = scl
-    cube["scl"].attrs = dict(
-        flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        flag_meanings=(
-            "no_data saturated_or_defective_pixel topographic_casted_shadows "
-            "cloud_shadows vegetation not_vegetation water "
-            "unclassified cloud_medium_probability "
-            "cloud_high_probability thin_cirrus snow_or_ice"
-        ),
-        flag_colors=(
-            "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
-            "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
-        ),
-    )
-    cube.attrs = ds.attrs
+    sen2_attrs.update(
+            dict(
+                description="Scene classification layer of the Sentinel-2 L2A product.",
+                flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                flag_meanings=(
+                    "no_data saturated_or_defective_pixel topographic_casted_shadows "
+                    "cloud_shadows vegetation not_vegetation water "
+                    "unclassified cloud_medium_probability "
+                    "cloud_high_probability thin_cirrus snow_or_ice"
+                ),
+                flag_colors=(
+                    "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
+                    "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
+                ),
+            )
+        )
+    cube["scl"].attrs = sen2_attrs
+    cube.attrs = cube_attrs
     return cube
 
 
@@ -112,18 +157,29 @@ def add_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     )
     cube["cloud_mask"] = cloud_mask
     cube["cloud_mask"].attrs = dict(
+        standard_name="cloudmask",
+        long_name=(
+            "Cloudmask generated using an AI approach following the implementation "
+            "of EarthNet Minicuber, based on CloudSEN12."
+        ),
+        source="https://github.com/earthnet2021/earthnet-minicuber",
+        institution="https://cloudsen12.github.io/",
         flag_values=[0, 1, 2, 3],
         flag_meanings="clear thick_cloud thin_cloud cloud_shadow",
         flag_colors="#000000 #FFFFFF #D3D3D3 #636363",
     )
-    attrs = {}
-    attrs["description"] = (
-        "Cloudmask generated using an AI approach following the implementation "
-        "of EarthNet Minicuber, based on CloudSEN12."
-    )
-    attrs["home_url"] = "https://github.com/earthnet2021/earthnet-minicuber"
-    attrs["cloudsen12_url"] = "https://cloudsen12.github.io/"
-    cube.attrs["cloud_mask_attrs"] = attrs
+    return cube
+
+
+def get_cloudmask(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
+    data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}_cloudmask.zarr"
+    if not super_store["store_team"].has_data(data_id):
+        constants.LOG.info(
+            f"Cloud mask with data ID {data_id} does not exists. We "
+            f"discard the data cube generation for now."
+        )
+        return None
+    cube["cloud_mask"] = super_store["store_team"].open_data(data_id)["cloud_mask"]
     return cube
 
 
@@ -162,6 +218,18 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         format_name="zarr",
         data_vars_only=True,
     )
+    attrs = {}
+    attrs["long_name"] = "Land Cover Map of ESA CCI brokered by CDS"
+    attrs["source"] = (
+        "https://cds.climate.copernicus.eu/datasets/satellite-land-cover?tab=overview"
+    )
+    attrs["institution"] = "Copernicus Climate Data Store"
+    attrs["license"] = (
+        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/licences"
+        "/satellite-land-cover/satellite-land-cover_8423d13d3dfd95bbeca92d935551"
+        "6f21de90d9b40083a915ead15a189d6120fa.pdf"
+    )
+    attrs["product_version"] = "2.0.7cds"
     name_dict = {
         "change_count": "lccs_change_count",
         "current_pixel_state": "lccs_current_pixel_state",
@@ -171,21 +239,13 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     }
     for key, val in name_dict.items():
         cube[val] = lc_reproject[key].astype(lc[key].dtype)
-    attrs = lc_reproject.attrs
-    attrs["home_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "satellite-land-cover?tab=overview"
-    )
-    attrs["data_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "satellite-land-cover?tab=download"
-    )
-    attrs["license_url"] = (
-        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/licences"
-        "/satellite-land-cover/satellite-land-cover_8423d13d3dfd95bbeca92d935551"
-        "6f21de90d9b40083a915ead15a189d6120fa.pdf"
-    )
-    cube.attrs["lccs_attrs"] = attrs
+        cube[val].attrs = attrs
+        if "flag_colors" in lc_reproject[key].attrs:
+            cube[val].attrs["flag_colors"] = lc_reproject[key].attrs["flag_colors"]
+        if "flag_meanings" in lc_reproject[key].attrs:
+            cube[val].attrs["flag_meanings"] = lc_reproject[key].attrs["flag_meanings"]
+        if "flag_values" in lc_reproject[key].attrs:
+            cube[val].attrs["flag_values"] = lc_reproject[key].attrs["flag_values"]
 
     # fill in attributes regarding land cover classification
     lc_first = []
@@ -229,6 +289,12 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         .astype(np.uint8)
     )
     cube["esa_wc"].attrs = dict(
+        standard_name="esa_world_cover",
+        long_name="ESA World Cover",
+        source="https://esa-worldcover.org",
+        license="https://creativecommons.org/licenses/by/4.0/",
+        institution="VITO Remote Sensing",
+        file_names=files,
         flag_values=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100],
         flag_meanings=(
             "tree_cover shrubland grassland cropland built_up "
@@ -241,12 +307,7 @@ def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             "#f0f0f0 #0064c8 #0096a0 #00cf75 #fae6a0"
         ),
     )
-    attrs = {}
-    attrs["home_url"] = "https://esa-worldcover.org"
-    attrs["data_url"] = "https://esa-worldcover.org/en/data-access"
-    attrs["license_url"] = "https://creativecommons.org/licenses/by/4.0/"
-    attrs["files"] = files
-    cube.attrs["esa_wc_attrs"] = attrs
+
     return cube
 
 
@@ -254,7 +315,6 @@ ERA5_AGGREGATION_ALL = [
     "d2m",
     "skt",
     "sp",
-    "msl",
     "stl1",
     "stl2",
     "stl3",
@@ -264,13 +324,26 @@ ERA5_AGGREGATION_ALL = [
     "swvl3",
     "swvl4",
     "t2m",
-    "u10n",
-    "v10n",
-    "rh",
+    "u10",
+    "v10",
     "vpd",
+    "rh",
+    "src",
+    "fal",
 ]
 ERA5_AGGREGATION_MEAN_MEDIAN_STD = ["lai_hv", "lai_lv"]
-ERA5_AGGREGATION_SUM = ["e", "pev", "slhf", "sshf", "ssr", "ssrd", "str", "strd", "tp"]
+ERA5_AGGREGATION_SUM = [
+    "e",
+    "pev",
+    "slhf",
+    "sshf",
+    "ssr",
+    "ssrd",
+    "str",
+    "strd",
+    "tp",
+    "ro",
+]
 # ref Magnus Formula for vapor pressure (Gleichung 6)
 # https://journals.ametsoc.org/view/journals/bams/86/2/bams-86-2-225.xml
 MF_A = 17.625
@@ -279,71 +352,59 @@ MF_C = 610.94
 
 
 def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
-    data_ids = super_store["store_team"].list_data_ids()
-    data_ids = [data_id for data_id in data_ids if "cubes/aux/era5/" in data_id]
-    data_ids.sort()
-    era5_steps = []
-    for data_id in data_ids:
-        era5 = super_store["store_team"].open_data(data_id)
-        es = MF_C * np.exp((MF_A * era5["t2m"]) / (era5["t2m"] + MF_B))
-        e = MF_C * np.exp((MF_A * era5["d2m"]) / (era5["d2m"] + MF_B))
-        era5["rh"] = (e / es) * 100
-        era5["vpd"] = es - e
-        era5_cube = era5.interp(
-            lat=cube.attrs["center_wgs84"][0],
-            lon=cube.attrs["center_wgs84"][1],
-            method="linear",
-        )
-        era5_cube = era5_cube.drop(["expver", "number", "lat", "lon"])
+    data_id = "cubes/aux/era5_land_time_optimized.zarr"
+    era5 = super_store["store_team"].open_data(data_id)
+    es = MF_C * np.exp((MF_A * era5["t2m"]) / (era5["t2m"] + MF_B))
+    e = MF_C * np.exp((MF_A * era5["d2m"]) / (era5["d2m"] + MF_B))
+    era5["rh"] = (e / es) * 100
+    era5["rh"].attrs = dict(
+        standard_name="relative_humidity",
+        long_name="Relative humidity (computed)",
+        units="%",
+    )
+    era5["vpd"] = es - e
+    era5["vpd"].attrs = dict(
+        standard_name="vapour_pressure_deficit",
+        long_name="Vapour pressure deficit (computed)",
+        units="Pa",
+    )
+    era5_cube = era5.interp(
+        lat=cube.attrs["center_wgs84"][0],
+        lon=cube.attrs["center_wgs84"][1],
+        method="linear",
+    )
+    era5_cube = era5_cube.drop(["lat", "lon"])
 
-        # aggregate from hourly to daily
-        era5_step = _aggregate_era5(era5_cube[ERA5_AGGREGATION_SUM], "sum")
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "mean")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "min")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "max")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "median")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "std")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "mean")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "median")
-        )
-        era5_step = era5_step.update(
-            _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "std")
-        )
-        era5_steps.append(era5_step)
-    era5_final = xr.concat(era5_steps, "time_era5")
+    # aggregate from hourly to daily
+    era5_final = _aggregate_era5(era5_cube[ERA5_AGGREGATION_SUM], "sum")
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "mean")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "min")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "max")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "median")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "std")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "mean")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "median")
+    )
+    era5_final = era5_final.update(
+        _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "std")
+    )
     era5_final = era5_final.chunk(chunks=dict(time_era5=era5_final.sizes["time_era5"]))
     era5_final = era5_final.astype(np.float32)
-    cube = cube.update(era5_final)
 
-    attrs = {}
-    attrs["home_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "reanalysis-era5-single-levels?tab=overview"
-    )
-    attrs["data_url"] = (
-        "https://cds-beta.climate.copernicus.eu/datasets/"
-        "reanalysis-era5-single-levels?tab=download"
-    )
-    attrs["license_url"] = (
-        "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/"
-        "licences/licence-to-use-copernicus-products/licence-to-use-"
-        "copernicus-products_b4b9451f54cffa16ecef5c912c9cebd6979925a95"
-        "6e3fa677976e0cf198c2c18.pdf"
-    )
-    cube.attrs["era5_attrs"] = attrs
+    cube = cube.update(era5_final)
 
     return cube
 
@@ -364,14 +425,17 @@ def add_reprojected_dem(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             y=constants.CHUNKSIZE_Y,
         )
     )
-    attrs = dem_reproject.attrs
-    attrs["home_url"] = "https://registry.opendata.aws/copernicus-dem/"
-    attrs["data_url"] = "https://registry.opendata.aws/copernicus-dem/"
-    attrs["license_url"] = (
-        "https://spacedata.copernicus.eu/documents/20126/0/"
-        "CSCDA_ESA_Mission-specific+Annex.pdf"
+    cube["dem"].attrs = dict(
+        standard_name="copernicus_dem_30m",
+        long_name="Copernicus Digital Elevation Model (DEM) at 30m",
+        units="m",
+        institution="Synergise",
+        source="https://registry.opendata.aws/copernicus-dem/",
+        license=(
+            "https://spacedata.copernicus.eu/documents/20126/0/"
+            "CSCDA_ESA_Mission-specific+Annex.pdf"
+        ),
     )
-    cube.attrs["dem_attrs"] = attrs
     return cube
 
 
@@ -501,4 +565,33 @@ def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
     rename_dict = {key: f"era5_{key}_{mode}" for key in era5_mode}
     rename_dict["time"] = "time_era5"
     era5_mode = era5_mode.rename(rename_dict)
+    for key in era5.data_vars:
+        attrs = dict(
+            standard_name=era5[key].attrs["standard_name"],
+            long_name=era5[key].attrs["long_name"],
+            units=era5[key].attrs["units"],
+            institution="Copernicus Climate Data Store",
+            source=(
+                "https://cds.climate.copernicus.eu/datasets/"
+                "reanalysis-era5-land?tab=overview"
+            ),
+            license=(
+                "https://object-store.os-api.cci2.ecmwf.int/cci2-prod-catalogue/"
+                "licences/licence-to-use-copernicus-products/licence-to-use-"
+                "copernicus-products_b4b9451f54cffa16ecef5c912c9cebd6979925a95"
+                "6e3fa677976e0cf198c2c18.pdf"
+            ),
+        )
+        era5_mode[f"era5_{key}_{mode}"].attrs = attrs
     return era5_mode
+
+
+def _assert_dataset_nan(ds: xr.Dataset, threshold: float | int) -> bool:
+    for key in list(ds.keys()):
+        array = ds[key].values.ravel()
+        null_size = array[np.isnan(array)].size
+        perc = (null_size / array.size) * 100
+        constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
+        if perc > threshold:
+            return False
+    return True
