@@ -42,6 +42,7 @@ def get_s2l2a(
                     f"for {data_id} for now."
                 )
                 return None
+        ds = ds.isel(x=slice(0, 1000), y=slice(0, 1000))
         dss.append(ds)
     
     # add attributes
@@ -66,7 +67,6 @@ def get_s2l2a(
 
 
 def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
-    ds = ds.isel(x=slice(0, 1000), y=slice(0, 1000))
     scl = ds.SCL.astype(np.uint8)
     solar_angle = ds.solar_angle.astype(np.float32)
     viewing_angle = ds.viewing_angle.astype(np.float32)
