@@ -52,14 +52,13 @@ def get_s2l2a(
     xcube_stac_attrs["institution"] = "Copernicus Data Space Ecosystem"
     xcube_stac_attrs["standard_name"] = "sentinel2_l2a"
     xcube_stac_attrs["long_name"] = "Sentinel-2 L2A prduct"
-    xcube_stac_attrs["stac_item_ids"] = dss[0].attrs["stac_item_ids"]
     xcube_stac_attrs["stac_catalog_url"] = dss[0].attrs["stac_catalog_url"]
+    xcube_stac_attrs["stac_item_ids"] = dss[0].attrs["stac_item_ids"]
     for ds in dss[1:]:
         xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
         
     # concatenate datasets
     ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
-
     ds.attrs = attrs
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
     ds.attrs["affine_transform"] = ds.rio.transform()
@@ -132,6 +131,7 @@ def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
         )
     cube["scl"].attrs = sen2_attrs
     cube.attrs = cube_attrs
+
     return cube
 
 

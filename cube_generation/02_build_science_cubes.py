@@ -128,6 +128,9 @@ if __name__ == "__main__":
         cube["band"] = cube.band.astype("str")
         compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
+        path = (
+            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr",
+        )
         super_store["store_team"].write_data(
             cube, path, replace=True, encoding=encoding
         )

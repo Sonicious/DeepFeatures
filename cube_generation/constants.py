@@ -48,9 +48,6 @@ TRAINING_LANDCOVER_DISTRIBUTION = dict(
 TRAINING_FOLDER_NAME = "training"
 SCIENCE_FOLDER_NAME = "science"
 
-SITES_LAT_LABEL = "center_lat"
-SITES_LON_LABEL = "center_lon"
-
 BANDID_TRANSLATOR = {}
 for band in spyndex.bands:
     if hasattr(spyndex.bands.get(band), "sentinel2a"):

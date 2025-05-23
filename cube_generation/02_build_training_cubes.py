@@ -8,6 +8,7 @@ from xcube.core.store import new_data_store
 import get_datasets
 import constants
 import utils
+from version import version
 
 
 def setup_cloudmask_model():
@@ -66,5 +67,8 @@ if __name__ == "__main__":
 
         # write final cube
         cube["band"] = cube.band.astype("str")
-        super_store["store_team"].write_data(cube, cube.attrs["path"], replace=True)
+        path = (
+            f"cubes/{constants.TRAINING_NB_CUBES}/{version}/{cube.attrs['id']:06}.zarr",
+        )
+        super_store["store_team"].write_data(cube, path, replace=True)
         constants.LOG.info(f"Training cube written to {cube.attrs['path']}.")
