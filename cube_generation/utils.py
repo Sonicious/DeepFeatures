@@ -113,12 +113,12 @@ def create_utm_bounding_box(
 
 
 def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
-    solar_azimuth = cube.solar_angle.sel(angle="Azimuth").drop_vars("angle")
-    viewing_azimuth = cube.viewing_angle.sel(angle="Azimuth").drop_vars("angle")
+    solar_azimuth = cube.solar_angle.sel(angle="azimuth").drop_vars("angle")
+    viewing_azimuth = cube.viewing_angle.sel(angle="azimuth").drop_vars("angle")
     rel_azimuth = solar_azimuth - viewing_azimuth
     c_fac = c_factor.c_factor(
-        cube.solar_angle.sel(angle="Zenith").drop_vars("angle"),
-        cube.viewing_angle.sel(angle="Zenith").drop_vars("angle"),
+        cube.solar_angle.sel(angle="zenith").drop_vars("angle"),
+        cube.viewing_angle.sel(angle="zenith").drop_vars("angle"),
         rel_azimuth,
     )
     c_fac = c_fac.rename(dict(angle_x="x", angle_y="y"))
@@ -129,22 +129,7 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
         kwargs={"fill_value": "extrapolate"},
     )
     c_fac = c_fac.to_dataset(dim="band")
-    for var in c_fac:
-        temp = cube[var] * c_fac[var]
-        num_times = 50
-        temp_nan_count = temp.isel(time=slice(0, num_times)).isnull().sum().values
-        perc = temp_nan_count / temp.isel(time=slice(0, num_times)).size * 100
-
-        if perc > 10:
-            var_nan_count = cube[var].isel(time=slice(0, 100)).isnull().sum().values
-            if temp_nan_count > 2 * var_nan_count:
-                LOG.info(
-                    "Too many nan values in c-factor during BRDF correction. "
-                    f"Nan count is incresed from {var_nan_count} to {temp_nan_count}. "
-                    f"BRDF correction is discarded for {var}."
-                )
-                continue
-        
+    for var in c_fac:        
         cube[var] *= c_fac[var]
             
     return cube

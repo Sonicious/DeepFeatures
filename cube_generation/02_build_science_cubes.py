@@ -4,6 +4,7 @@ import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
 from xcube.core.store import new_data_store
+from xcube.core.chunk import chunk_dataset
 import zarr
 
 import get_datasets
@@ -126,10 +127,26 @@ if __name__ == "__main__":
 
         # write final cube
         cube["band"] = cube.band.astype("str")
+        cube.coords["angle"] = ["Zenith", "Azimuth"]
+        cube = chunk_dataset(
+            cube,
+            chunk_sizes=dict(
+                angle=-1,
+                angle_x=-1,
+                angle_y=-1,
+                band=-1,
+                time=1,
+                time_era5=-1,
+                time_lccs=-1,
+                x=500,
+                y=500,                
+            ),
+            format_name="zarr",
+        )
         compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
         path = (
-            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr",
+            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr"
         )
         super_store["store_team"].write_data(
             cube, path, replace=True, encoding=encoding

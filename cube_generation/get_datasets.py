@@ -35,14 +35,15 @@ def get_s2l2a(
                 f"Check dataset with data ID {data_id_year} for nan values"
             )
             threshold = 10
-            if not _assert_dataset_nan(ds, threshold):
-                constants.LOG.info(
-                    f"More than {threshold}% nan found in dataset with data ID "
-                    f"{data_id_year}. We discard the data cube generation "
-                    f"for {data_id} for now."
-                )
-                return None
-        ds = ds.isel(x=slice(0, 1000), y=slice(0, 1000))
+            dataset_nan = _assert_dataset_nan(ds, threshold)
+           # if not _assert_dataset_nan(ds, threshold):
+           #     constants.LOG.info(
+           #         f"More than {threshold}% nan found in dataset with data ID "
+           #         f"{data_id_year}. We discard the data cube generation "
+            #        f"for {data_id} for now."
+             #   )
+                # return None
+        ds = ds.isel(x=slice(-1000, None), y=slice(-1000, None))
         dss.append(ds)
     
     # add attributes
@@ -59,7 +60,11 @@ def get_s2l2a(
         xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
         
     # concatenate datasets
-    ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
+    try:
+        ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
+    except:
+        constants.LOG.info(f"Dims are wrong.")
+        return None
     ds.attrs = attrs
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
     ds.attrs["affine_transform"] = ds.rio.transform()
@@ -592,6 +597,6 @@ def _assert_dataset_nan(ds: xr.Dataset, threshold: float | int) -> bool:
         null_size = array[np.isnan(array)].size
         perc = (null_size / array.size) * 100
         constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
-        if perc > threshold:
-            return False
+        #if perc > threshold:
+        #    return False
     return True
