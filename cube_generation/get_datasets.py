@@ -193,7 +193,7 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     lc = mlds_lc.base_dataset
 
     # clip LC dataset by data cube geometry
-    buffer = 0.005
+    buffer = 0.02
     bbox = cube.attrs["bbox_wgs84"]
     bbox = [bbox[0] - buffer, bbox[1] - buffer, bbox[2] + buffer, bbox[3] + buffer]
     lc = clip_dataset_by_geometry(lc, bbox)
@@ -415,7 +415,13 @@ def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
 
 
 def add_reprojected_dem(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
-    dem_files = _get_dem_file_paths(cube.attrs["bbox_wgs84"])
+    bbox = [
+        cube.attrs["bbox_wgs84"][0] - 0.05,
+        cube.attrs["bbox_wgs84"][1] - 0.05,
+        cube.attrs["bbox_wgs84"][2] + 0.05,
+        cube.attrs["bbox_wgs84"][3] + 0.05,
+    ]
+    dem_files = _get_dem_file_paths(bbox)
     ds_dem = _load_dem_data(super_store, dem_files)
     dem_reproject = ds_dem.rio.reproject(
         f"EPSG:326{cube.attrs['utm_zone'][:2]}",

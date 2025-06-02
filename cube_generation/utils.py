@@ -1,6 +1,7 @@
 import copy
 import datetime
 
+import numpy as np
 import pandas as pd
 from sen2nbar import c_factor
 import spyndex
@@ -113,6 +114,7 @@ def create_utm_bounding_box(
 
 
 def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
+    cube.coords["angle"] = ["zenith", "azimuth"]
     solar_azimuth = cube.solar_angle.sel(angle="azimuth").drop_vars("angle")
     viewing_azimuth = cube.viewing_angle.sel(angle="azimuth").drop_vars("angle")
     rel_azimuth = solar_azimuth - viewing_azimuth
@@ -122,6 +124,8 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
         rel_azimuth,
     )
     c_fac = c_fac.rename(dict(angle_x="x", angle_y="y"))
+    if np.any(np.isnan(c_fac.values)):
+        c_fac = _fill_nan_values(c_fac)
     c_fac = c_fac.interp(
         y=cube.y.values,
         x=cube.x.values,
@@ -134,6 +138,17 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
             
     return cube
 
+def _fill_nan_values(c_fac: xr.DataArray) -> xr.DataArray:
+    c_fac = c_fac.sortby("y")
+
+    # 2. Interpolate over spatial dims (x and y)
+    c_fac_filled = (
+        c_fac.interpolate_na("x", method="linear", fill_value="extrapolate")
+          .interpolate_na("y", method="linear", fill_value="extrapolate")
+    )
+    c_fac_filled = c_fac_filled.sortby("y", ascending=False)
+    return c_fac_filled
+    
 
 def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
     ds = cube["s2l2a"].to_dataset(dim="band")
