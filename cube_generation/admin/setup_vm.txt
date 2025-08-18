@@ -1,0 +1,24 @@
+Set up VM on Creodias:
+
+1. Launch new instance:
+-----------------------
+Select privat-net and eodata
+Select ping ssh
+Select Ubuntu 22.04
+Select either 8GB or 16GB RAM
+
+2. Associate Floating IP
+------------------------
+Port to 192.168.x.x
+
+3. access vm via ssh
+--------------------
+ssh eouser@x.x.x.x (IP address)
+
+4. set cube generation
+----------------------
+Install mircomamba:
+    curl -L https://micro.mamba.pm/install.sh | bash
+    source ~/.bashrc
+    micromamba –version
+    micromamba install –c conda-forge spyndex sen2nbar utm xcube-stac

@@ -34,7 +34,7 @@ def generate_time_interval() -> tuple[tuple[str, str], tuple[str, str]]:
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
     bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lon"], box_size_km=10
+        site_params["lat"], site_params["lon"], box_size_km=0.9
     )
     data_id = f"cubes/temp/{constants.TRAINING_NB_CUBES}/{version}/{idx:04}.zarr"
 
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         cdse_credentails = json.load(f)
 
     super_store = dict(
-        store_stac=new_data_store("stac-cdse", stack_mode=True, **cdse_credentails),
+        store_stac=new_data_store("stac-cdse-ardc", **cdse_credentails),
         store_team=new_data_store(
             "s3",
             root=s3_credentials["bucket"],
