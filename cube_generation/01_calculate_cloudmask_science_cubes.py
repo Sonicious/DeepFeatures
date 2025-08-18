@@ -45,7 +45,7 @@ if __name__ == "__main__":
     )
 
     # loop over sites
-    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
+    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
     for idx in range(0, 71):
         constants.LOG.info(f"Cloud mask calculation of cube {idx} started.")
         # get attributes of cube

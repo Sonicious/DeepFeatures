@@ -11,8 +11,6 @@ import xarray as xr
 from constants import BANDID_TRANSLATOR
 from constants import DT_START
 from constants import DT_END
-from constants import SPATIAL_RES
-from constants import LOG
 from version import version
 
 
@@ -133,22 +131,22 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
         kwargs={"fill_value": "extrapolate"},
     )
     c_fac = c_fac.to_dataset(dim="band")
-    for var in c_fac:        
+    for var in c_fac:
         cube[var] *= c_fac[var]
-            
+
     return cube
+
 
 def _fill_nan_values(c_fac: xr.DataArray) -> xr.DataArray:
     c_fac = c_fac.sortby("y")
 
     # 2. Interpolate over spatial dims (x and y)
-    c_fac_filled = (
-        c_fac.interpolate_na("x", method="linear", fill_value="extrapolate")
-          .interpolate_na("y", method="linear", fill_value="extrapolate")
-    )
+    c_fac_filled = c_fac.interpolate_na(
+        "x", method="linear", fill_value="extrapolate"
+    ).interpolate_na("y", method="linear", fill_value="extrapolate")
     c_fac_filled = c_fac_filled.sortby("y", ascending=False)
     return c_fac_filled
-    
+
 
 def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
     ds = cube["s2l2a"].to_dataset(dim="band")

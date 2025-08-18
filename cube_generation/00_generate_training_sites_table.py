@@ -130,4 +130,4 @@ if __name__ == "__main__":
                 idx += 1
             nb_sites -= 1
 
-    table.to_csv(os.path.join(_DIR, constants.PATH_SITES_PARAMETERS_TRAINING))
+    table.to_csv(os.path.join(_DIR, "sites_traning_first.csv"))

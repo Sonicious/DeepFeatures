@@ -62,18 +62,15 @@ if __name__ == "__main__":
     )
 
     # loop over sites
-    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
+    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
     for idx in range(0, 71):
         constants.LOG.info(f"Generation of cube {idx} started.")
 
-        path = (
-            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
-        )
+        path = f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
         if super_store["store_team"].has_data(path):
             constants.LOG.info(f"Cube {path} already generated.")
             continue
-            
-        
+
         # get attributes of cube
         attrs = utils.readin_sites_parameters(
             sites_params, idx, constants.SCIENCE_FOLDER_NAME
@@ -114,15 +111,15 @@ if __name__ == "__main__":
         # add ERA5
         cube = get_datasets.add_era5(super_store, cube)
         constants.LOG.info(f"ERA5 data added.")
-        
+
         # add grid_mapping to encoding
         for var in cube.data_vars:
-            if 'grid_mapping' in cube[var].attrs:
-                del cube[var].attrs['grid_mapping']
-            if 'grid_mapping' in cube[var].encoding:
-                del cube[var].encoding['grid_mapping']
+            if "grid_mapping" in cube[var].attrs:
+                del cube[var].attrs["grid_mapping"]
+            if "grid_mapping" in cube[var].encoding:
+                del cube[var].encoding["grid_mapping"]
             if cube[var].dims[-2:] == ("y", "x"):
-                cube[var].attrs['grid_mapping'] = "spatial_ref"
+                cube[var].attrs["grid_mapping"] = "spatial_ref"
         constants.LOG.info(f"Grid mapping added to attrs.")
 
         # write final cube
@@ -139,15 +136,13 @@ if __name__ == "__main__":
                 time_era5=-1,
                 time_lccs=-1,
                 x=500,
-                y=500,                
+                y=500,
             ),
             format_name="zarr",
         )
         compressor = zarr.Blosc(cname="zstd", clevel=5, shuffle=1)
         encoding = {"s2l2a": {"compressor": compressor}}
-        path = (
-            f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr"
-        )
+        path = f"cubes/{constants.SCIENCE_FOLDER_NAME}/{version}/{cube.attrs['id']:03}.zarr"
         super_store["store_team"].write_data(
             cube, path, replace=True, encoding=encoding
         )
