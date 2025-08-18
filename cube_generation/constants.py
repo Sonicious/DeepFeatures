@@ -12,9 +12,8 @@ logging.getLogger("botocore.httpchecksum").setLevel(logging.WARNING)
 LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
-PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2 = os.path.join(DIR, "sites_science_sen2.csv")
-PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science.csv")
-PATH_SITES_PARAMETERS_TRAINING = os.path.join(DIR, "sites_training.csv")
+PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science_final.csv")
+PATH_SITES_PARAMETERS_TRAINING = os.path.join(DIR, "sites_training_final.csv")
 
 DATA_ID_LAND_COVER_CLASS = "LC-1x2025x2025-2.0.0.levels"
 DATA_ID_ERA5 = "cubes/aux/era5.zarr"

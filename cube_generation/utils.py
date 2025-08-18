@@ -17,15 +17,15 @@ from version import version
 
 
 def readin_sites_parameters(
-    sites_params: pd.DataFrame,
-    index: int,
-    folder_name: str,
+    sites_params: pd.DataFrame, index: int, folder_name: str, **kwargs
 ) -> dict:
     site_params = sites_params.loc[index]
     lat = float(site_params["lat"])
     lon = float(site_params["lon"])
     if "size_bbox" in site_params:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
+    elif "size_bbox" in kwargs:
+        bbox = create_utm_bounding_box(lat, lon, box_size_km=kwargs["size_bbox"])
     else:
         bbox = create_utm_bounding_box(lat, lon)
     if folder_name == "science":
@@ -133,22 +133,22 @@ def apply_nbar(cube: xr.Dataset) -> xr.Dataset:
         kwargs={"fill_value": "extrapolate"},
     )
     c_fac = c_fac.to_dataset(dim="band")
-    for var in c_fac:        
+    for var in c_fac:
         cube[var] *= c_fac[var]
-            
+
     return cube
+
 
 def _fill_nan_values(c_fac: xr.DataArray) -> xr.DataArray:
     c_fac = c_fac.sortby("y")
 
     # 2. Interpolate over spatial dims (x and y)
-    c_fac_filled = (
-        c_fac.interpolate_na("x", method="linear", fill_value="extrapolate")
-          .interpolate_na("y", method="linear", fill_value="extrapolate")
-    )
+    c_fac_filled = c_fac.interpolate_na(
+        "x", method="linear", fill_value="extrapolate"
+    ).interpolate_na("y", method="linear", fill_value="extrapolate")
     c_fac_filled = c_fac_filled.sortby("y", ascending=False)
     return c_fac_filled
-    
+
 
 def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
     ds = cube["s2l2a"].to_dataset(dim="band")
