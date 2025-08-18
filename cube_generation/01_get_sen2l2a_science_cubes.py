@@ -25,37 +25,47 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
                 apply_scaling=True,
                 angles_sentinel2=True,
                 asset_names=[
-                    "B01",
-                    "B02",
-                    "B03",
+                    # "B01",
+                    # "B02",
+                    # "B03",
                     "B04",
-                    "B05",
-                    "B06",
-                    "B07",
-                    "B08",
-                    "B8A",
-                    "B09",
-                    "B11",
-                    "B12",
-                    "SCL",
+                    # "B05",
+                    # "B06",
+                    # "B07",
+                    # "B08",
+                    # "B8A",
+                    # "B09",
+                    # "B11",
+                    # "B12",
+                    # "SCL",
                 ],
             )
+            print(ds)
 
-            constants.LOG.info(f"Writing of cube to {data_id_mod} started.")
-            super_store["store_team"].write_data(ds, data_id_mod, replace=True)
-            constants.LOG.info(f"Writing of cube to {data_id_mod} finished.")
+            import matplotlib.pyplot as plt
+
+            # ds.B04.isel(time=0).plot()
+            # plt.show()
+            for i in range(3):
+                ds.viewing_angle.isel(time=i, band=0, angle=0).plot()
+                plt.show()
+
+            # constants.LOG.info(f"Writing of cube to {data_id_mod} started.")
+            # super_store["store_team"].write_data(ds, data_id_mod, replace=True)
+            # constants.LOG.info(f"Writing of cube to {data_id_mod} finished.")
         else:
             constants.LOG.info(f"Cube {data_id_mod} already retrieved.")
 
     time_ranges = [
-        ["2016-11-01", "2017-12-31"],
-        ["2018-01-01", "2018-12-31"],
-        ["2019-01-01", "2019-12-31"],
-        ["2020-01-01", "2020-12-31"],
-        ["2021-01-01", "2021-12-31"],
-        ["2022-01-01", "2022-12-31"],
-        ["2023-01-01", "2023-12-31"],
-        ["2024-01-01", "2024-12-31"],
+        ["2016-11-01", "2016-11-15"],
+        # ["2016-11-01", "2017-12-31"],
+        # ["2018-01-01", "2018-12-31"],
+        # ["2019-01-01", "2019-12-31"],
+        # ["2020-01-01", "2020-12-31"],
+        # ["2021-01-01", "2021-12-31"],
+        # ["2022-01-01", "2022-12-31"],
+        # ["2023-01-01", "2023-12-31"],
+        # ["2024-01-01", "2024-12-31"],
     ]
     for time_range in time_ranges:
         data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
@@ -95,7 +105,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE_SENTINEL2)
-    for idx in range(0, 10):
+    for idx in [52]:
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)
