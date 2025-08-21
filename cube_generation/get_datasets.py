@@ -35,17 +35,10 @@ def get_s2l2a(
                 f"Check dataset with data ID {data_id_year} for nan values"
             )
             threshold = 10
-            dataset_nan = _assert_dataset_nan(ds, threshold)
-           # if not _assert_dataset_nan(ds, threshold):
-           #     constants.LOG.info(
-           #         f"More than {threshold}% nan found in dataset with data ID "
-           #         f"{data_id_year}. We discard the data cube generation "
-            #        f"for {data_id} for now."
-             #   )
-                # return None
+            assert_dataset_nan(ds, threshold)
         ds = ds.isel(x=slice(-1000, None), y=slice(-1000, None))
         dss.append(ds)
-    
+
     # add attributes
     xcube_stac_attrs = {}
     xcube_stac_attrs["source"] = (
@@ -58,7 +51,7 @@ def get_s2l2a(
     xcube_stac_attrs["stac_item_ids"] = dss[0].attrs["stac_item_ids"]
     for ds in dss[1:]:
         xcube_stac_attrs["stac_item_ids"].update(ds.attrs["stac_item_ids"])
-        
+
     # concatenate datasets
     try:
         ds = xr.concat(dss, dim="time", join="exact", combine_attrs="drop")
@@ -66,6 +59,43 @@ def get_s2l2a(
         constants.LOG.info(f"Dims are wrong.")
         return None
     ds.attrs = attrs
+    ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
+    ds.attrs["affine_transform"] = ds.rio.transform()
+    return ds
+
+
+def get_s2l2a_single_training_year(
+    super_store: dict, loc_idx: int, time_idx: int, check_nan: bool = True
+) -> xr.Dataset | None:
+    data_id = (
+        f"cubes/temp/{constants.TRAINING_FOLDER_NAME}/{version}/"
+        f"{loc_idx:04}_{time_idx}.zarr"
+    )
+    if not super_store["store_team"].has_data(data_id):
+        constants.LOG.info(
+            f"Dataset with data ID {data_id} does not exists. We "
+            f"discard the data cube generation for {data_id} for now."
+        )
+        return None
+    ds = super_store["store_team"].open_data(data_id)
+    if check_nan:
+        constants.LOG.info(f"Check dataset with data ID {data_id} for nan values")
+        threshold = 1
+        assert_dataset_nan(ds, threshold)
+    ds = ds.isel(x=slice(-90, None), y=slice(-90, None))
+
+    # add attributes
+    xcube_stac_attrs = {}
+    xcube_stac_attrs["source"] = (
+        "https://documentation.dataspace.copernicus.eu/APIs/S3.html"
+    )
+    xcube_stac_attrs["institution"] = "Copernicus Data Space Ecosystem"
+    xcube_stac_attrs["standard_name"] = "sentinel2_l2a"
+    xcube_stac_attrs["long_name"] = "Sentinel-2 L2A prduct"
+    xcube_stac_attrs["stac_catalog_url"] = ds.attrs["stac_catalog_url"]
+    xcube_stac_attrs["stac_item_ids"] = ds.attrs["stac_item_ids"]
+
+    ds.attrs = dict()
     ds.attrs["xcube_stac_attrs"] = xcube_stac_attrs
     ds.attrs["affine_transform"] = ds.rio.transform()
     return ds
@@ -119,21 +149,21 @@ def reorganize_cube(ds: xr.Dataset) -> xr.Dataset:
     cube["viewing_angle"].attrs = sen2_attrs
     cube["scl"] = scl
     sen2_attrs.update(
-            dict(
-                description="Scene classification layer of the Sentinel-2 L2A product.",
-                flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-                flag_meanings=(
-                    "no_data saturated_or_defective_pixel topographic_casted_shadows "
-                    "cloud_shadows vegetation not_vegetation water "
-                    "unclassified cloud_medium_probability "
-                    "cloud_high_probability thin_cirrus snow_or_ice"
-                ),
-                flag_colors=(
-                    "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
-                    "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
-                ),
-            )
+        dict(
+            description="Scene classification layer of the Sentinel-2 L2A product.",
+            flag_values=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            flag_meanings=(
+                "no_data saturated_or_defective_pixel topographic_casted_shadows "
+                "cloud_shadows vegetation not_vegetation water "
+                "unclassified cloud_medium_probability "
+                "cloud_high_probability thin_cirrus snow_or_ice"
+            ),
+            flag_colors=(
+                "#000000 #ff0000 #2f2f2f #643200 #00a000 #ffe65a #0000ff "
+                "#808080 #c0c0c0 #ffffff #64c8ff #ff96ff"
+            ),
         )
+    )
     cube["scl"].attrs = sen2_attrs
     cube.attrs = cube_attrs
 
@@ -597,12 +627,9 @@ def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
     return era5_mode
 
 
-def _assert_dataset_nan(ds: xr.Dataset, threshold: float | int) -> bool:
+def assert_dataset_nan(ds: xr.Dataset, threshold: float | int) -> bool:
     for key in list(ds.keys()):
         array = ds[key].values.ravel()
         null_size = array[np.isnan(array)].size
         perc = (null_size / array.size) * 100
         constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
-        #if perc > threshold:
-        #    return False
-    return True

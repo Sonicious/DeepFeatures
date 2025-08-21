@@ -21,4 +21,9 @@ Install mircomamba:
     curl -L https://micro.mamba.pm/install.sh | bash
     source ~/.bashrc
     micromamba –version
-    micromamba install –c conda-forge spyndex sen2nbar utm xcube-stac
+    micromamba activate base
+    micromamba install -c conda-forge spyndex sen2nbar utm xcube-stac
+    git clone https://github.com/Sonicious/DeepFeatures.git
+    scp cube_generation/cdse-credentials.json eouser@x.x.x.x:/home/eouser/DeepFeatures/cube_generation/
+    scp cube_generation/s3-credentials.json eouser@x.x.x.x:/home/eouser/DeepFeatures/cube_generation/
+

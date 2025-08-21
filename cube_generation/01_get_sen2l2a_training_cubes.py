@@ -36,7 +36,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
     bbox = utils.create_utm_bounding_box(
         site_params["lat"], site_params["lon"], box_size_km=0.9
     )
-    data_id = f"cubes/temp/{constants.TRAINING_NB_CUBES}/{version}/{idx:04}.zarr"
+    data_id = f"cubes/temp/{constants.TRAINING_FOLDER_NAME}/{version}/{idx:04}.zarr"
 
     def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
         if not super_store["store_team"].has_data(data_id_mod):
@@ -48,7 +48,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
                 spatial_res=constants.SPATIAL_RES,
                 time_range=time_range,
                 apply_scaling=True,
-                angles_sentinel2=True,
+                add_angles=True,
                 asset_names=[
                     "B01",
                     "B02",
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for idx in range(len(sites_params)):
+    for idx in range(1):
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)

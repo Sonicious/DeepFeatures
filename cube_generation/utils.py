@@ -18,12 +18,15 @@ def readin_sites_parameters(
     sites_params: pd.DataFrame,
     index: int,
     folder_name: str,
+    **kwargs,
 ) -> dict:
     site_params = sites_params.loc[index]
     lat = float(site_params["lat"])
     lon = float(site_params["lon"])
     if "size_bbox" in site_params:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
+    elif "size_box" in kwargs:
+        bbox = create_utm_bounding_box(lat, lon, box_size_km=kwargs["size_bbox"])
     else:
         bbox = create_utm_bounding_box(lat, lon)
     if folder_name == "science":
@@ -62,10 +65,14 @@ def readin_sites_parameters(
     )
     if "time_range_start" in site_params:
         cube_attrs["time_range_start"] = site_params["time_range_start"]
+    elif "time_range_start" in kwargs:
+        cube_attrs["time_range_start"] = kwargs["time_range_start"]
     else:
         cube_attrs["time_range_start"] = DT_START
     if "time_range_end" in site_params:
         cube_attrs["time_range_end"] = site_params["time_range_end"]
+    elif "time_range_end" in kwargs:
+        cube_attrs["time_range_end"] = kwargs["time_range_end"]
     else:
         cube_attrs["time_range_end"] = DT_END
     return cube_attrs
