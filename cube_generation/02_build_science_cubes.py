@@ -132,7 +132,7 @@ if __name__ == "__main__":
                 angle_x=-1,
                 angle_y=-1,
                 band=-1,
-                time=1,
+                time=20,
                 time_era5=-1,
                 time_lccs=-1,
                 x=500,

@@ -62,14 +62,14 @@ if __name__ == "__main__":
     )
 
     # loop over sites
-    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
+    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
     for loc_idx in range(0, 1):
         for time_idx in range(2):
             constants.LOG.info(f"Generation of cube {loc_idx:04}_{time_idx} started.")
 
             path = (
                 f"cubes/{constants.TRAINING_FOLDER_NAME}/{version}/"
-                "{loc_idx:04}_{time_idx}.zarr"
+                f"{loc_idx:04}_{time_idx}.zarr"
             )
             if super_store["store_team"].has_data(path):
                 constants.LOG.info(f"Cube {path} already generated.")
@@ -84,8 +84,8 @@ if __name__ == "__main__":
             constants.LOG.info(f"Open Sentinel-2 L2A.")
 
             # get attributes of cube
-            time_range_start = cube.time.values[0]
-            time_range_end = cube.time.values[-1]
+            time_range_start = cube.time.values[0].astype(str)[:-3]
+            time_range_end = cube.time.values[-1].astype(str)[:-3]
             attrs = utils.readin_sites_parameters(
                 sites_params,
                 loc_idx,
@@ -94,6 +94,7 @@ if __name__ == "__main__":
                 time_range_start=time_range_start,
                 time_range_end=time_range_end,
             )
+            cube.attrs.update(attrs)
 
             # apply BRDF correction
             cube = utils.apply_nbar(cube)
@@ -104,9 +105,7 @@ if __name__ == "__main__":
             constants.LOG.info(f"Cube reorgnaized.")
 
             # add cloud mask
-            cube = get_datasets.get_cloudmask(super_store, cube)
-            if cube is None:
-                continue
+            cube = get_datasets.add_cloudmask(super_store, cube)
             constants.LOG.info(f"Cloud mask added.")
 
             # add DEM
@@ -145,11 +144,11 @@ if __name__ == "__main__":
                     angle_x=-1,
                     angle_y=-1,
                     band=-1,
-                    time=1,
+                    time=20,
                     time_era5=-1,
                     time_lccs=-1,
-                    x=500,
-                    y=500,
+                    x=90,
+                    y=90,
                 ),
                 format_name="zarr",
             )

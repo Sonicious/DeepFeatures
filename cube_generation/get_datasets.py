@@ -82,7 +82,7 @@ def get_s2l2a_single_training_year(
         constants.LOG.info(f"Check dataset with data ID {data_id} for nan values")
         threshold = 1
         assert_dataset_nan(ds, threshold)
-    ds = ds.isel(x=slice(-90, None), y=slice(-90, None))
+    ds = ds.isel(x=slice(0, 90), y=slice(0, 90))
 
     # add attributes
     xcube_stac_attrs = {}
@@ -229,8 +229,8 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     lc = clip_dataset_by_geometry(lc, bbox)
 
     # clip LC dataset by time
-    start = datetime.datetime(2015, 12, 31)
-    end = datetime.datetime(2022, 1, 2)
+    start = cube.time[0] - np.timedelta64(365, "D")
+    end = cube.time[-1] + np.timedelta64(365, "D")
     lc = lc.sel(time=slice(start, end))
 
     lc.rio.write_crs(lc.crs.attrs["wkt"], inplace=True)
@@ -307,6 +307,13 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
 
 def add_reprojected_esa_wc(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     ds_esa_wc, files = _load_esa_wc_data(super_store, cube.attrs["bbox_wgs84"])
+
+    # clip ESA WC dataset by data cube geometry
+    buffer = 0.02
+    bbox = cube.attrs["bbox_wgs84"]
+    bbox = [bbox[0] - buffer, bbox[1] - buffer, bbox[2] + buffer, bbox[3] + buffer]
+    ds_esa_wc = clip_dataset_by_geometry(ds_esa_wc, bbox)
+
     esa_wc_reproject = ds_esa_wc.rio.reproject(
         f"EPSG:326{cube.attrs['utm_zone'][:2]}",
         shape=(cube.sizes["y"], cube.sizes["x"]),
