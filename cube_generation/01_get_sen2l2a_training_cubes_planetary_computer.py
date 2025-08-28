@@ -36,7 +36,8 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
     data_id = f"cubes/temp/{constants.TRAINING_FOLDER_NAME}/{version}/{idx:04}.zarr"
 
     def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
-        if not super_store["store_team"].has_data(data_id_mod):
+        if True:
+        #if not super_store["store_team"].has_data(data_id_mod):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
                 data_id="sentinel-2-l2a",
@@ -69,11 +70,9 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Cube {data_id_mod} already retrieved.")
 
     time_ranges = generate_time_interval()
-    time_ranges = (
-        ("2019-02-10", "2020-02-10"),
-    )
     for time_idx, time_range in enumerate(time_ranges):
         data_id_mod = data_id.replace(".zarr", f"_{time_idx}.zarr")
+        _get_s2l2a_year(time_range, data_id_mod)
         for attempt in range(1, 4):
             try:
                 _get_s2l2a_year(time_range, data_id_mod)
@@ -108,7 +107,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for idx in range(0, 1):
+    for idx in range(2, 3):
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)

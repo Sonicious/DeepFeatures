@@ -4,6 +4,7 @@ import datetime
 import pandas as pd
 import numpy as np
 from xcube.core.store import new_data_store
+from xcube.core.chunk import chunk_dataset
 
 from version import version
 import constants
@@ -62,6 +63,19 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
                     "SCL",
                 ],
             )
+            ds = chunk_dataset(
+                cube,
+                chunk_sizes=dict(
+                    angle=-1,
+                    angle_x=-1,
+                    angle_y=-1,
+                    band=-1,
+                    time=20,
+                    x=-1,
+                    y=-1,
+                ),
+                format_name="zarr",
+            )
             print(ds)
             constants.LOG.info(f"Writing of cube to {data_id_mod} started.")
             super_store["store_team"].write_data(ds, data_id_mod, replace=True)
@@ -111,7 +125,7 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for idx in range(1):
+    for idx in range(10):
         constants.LOG.info(f"Generation of cube {idx} started.")
         site_params = sites_params.loc[idx]
         get_s2l2a(super_store, site_params)
