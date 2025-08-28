@@ -281,6 +281,10 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
             cube[val].attrs["flag_meanings"] = lc_reproject[key].attrs["flag_meanings"]
         if "flag_values" in lc_reproject[key].attrs:
             cube[val].attrs["flag_values"] = lc_reproject[key].attrs["flag_values"]
+        if "valid_max" in lc_reproject[key].attrs:
+            cube[val].attrs["valid_max"] = lc_reproject[key].attrs["valid_max"]
+        if "valid_min" in lc_reproject[key].attrs:
+            cube[val].attrs["valid_min"] = lc_reproject[key].attrs["valid_min"]
 
     # fill in attributes regarding land cover classification
     lc_first = []
@@ -393,9 +397,15 @@ MF_B = 243.04
 MF_C = 610.94
 
 
-def add_era5(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
+def add_era5(super_store: dict, cube: xr.Dataset, sel_time=False) -> xr.Dataset:
     data_id = "cubes/aux/era5_land_time_optimized.zarr"
     era5 = super_store["store_team"].open_data(data_id)
+    if sel_time:
+        era5 = era5.sel(time=slice(
+            np.datetime64(cube.time[0].values).astype('M8[D]'),
+            np.datetime64(cube.time[-1].values).astype('M8[D]')  + 1
+            )
+        )
     es = MF_C * np.exp((MF_A * era5["t2m"]) / (era5["t2m"] + MF_B))
     e = MF_C * np.exp((MF_A * era5["d2m"]) / (era5["d2m"] + MF_B))
     era5["rh"] = (e / es) * 100

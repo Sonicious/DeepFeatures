@@ -33,9 +33,6 @@ def generate_time_interval() -> tuple[tuple[str, str], tuple[str, str]]:
 
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
-    bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lon"], box_size_km=0.9
-    )
     data_id = f"cubes/temp/{constants.TRAINING_FOLDER_NAME}/{version}/{idx:04}.zarr"
 
     def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
@@ -43,8 +40,8 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
                 data_id="sentinel-2-l2a",
-                bbox=bbox["bbox_utm"],
-                crs=f"EPSG:326{bbox["utm_zone"][:2]}",
+                point=(site_params["lon"], site_params["lat"]),
+                bbox_width=900,
                 spatial_res=constants.SPATIAL_RES,
                 time_range=time_range,
                 apply_scaling=True,
@@ -73,6 +70,9 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Cube {data_id_mod} already retrieved.")
 
     time_ranges = generate_time_interval()
+    time_ranges = (
+        ("2019-02-10", "2020-02-10"),
+    )
     for time_idx, time_range in enumerate(time_ranges):
         data_id_mod = data_id.replace(".zarr", f"_{time_idx}.zarr")
         for attempt in range(1, 4):

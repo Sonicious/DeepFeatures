@@ -23,9 +23,10 @@ def readin_sites_parameters(
     site_params = sites_params.loc[index]
     lat = float(site_params["lat"])
     lon = float(site_params["lon"])
+
     if "size_bbox" in site_params:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=site_params["size_bbox"])
-    elif "size_box" in kwargs:
+    elif "size_bbox" in kwargs:
         bbox = create_utm_bounding_box(lat, lon, box_size_km=kwargs["size_bbox"])
     else:
         bbox = create_utm_bounding_box(lat, lon)
@@ -75,6 +76,7 @@ def readin_sites_parameters(
         cube_attrs["time_range_end"] = kwargs["time_range_end"]
     else:
         cube_attrs["time_range_end"] = DT_END
+
     return cube_attrs
 
 

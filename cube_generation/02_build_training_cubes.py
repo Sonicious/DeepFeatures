@@ -73,7 +73,7 @@ if __name__ == "__main__":
             )
             if super_store["store_team"].has_data(path):
                 constants.LOG.info(f"Cube {path} already generated.")
-                continue
+                #continue
 
             # get Sentinel-2 data
             cube = get_datasets.get_s2l2a_single_training_year(
@@ -121,7 +121,7 @@ if __name__ == "__main__":
             constants.LOG.info(f"ESA World Cover added.")
 
             # add ERA5
-            cube = get_datasets.add_era5(super_store, cube)
+            cube = get_datasets.add_era5(super_store, cube, sel_time=True)
             constants.LOG.info(f"ERA5 data added.")
 
             # add grid_mapping to encoding
