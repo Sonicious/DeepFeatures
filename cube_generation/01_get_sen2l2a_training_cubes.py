@@ -62,6 +62,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
                     "B12",
                     "SCL",
                 ],
+                tile_size=256,
             )
             ds = chunk_dataset(
                 cube,
