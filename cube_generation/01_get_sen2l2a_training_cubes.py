@@ -62,20 +62,6 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
                     "B12",
                     "SCL",
                 ],
-                tile_size=256,
-            )
-            ds = chunk_dataset(
-                cube,
-                chunk_sizes=dict(
-                    angle=-1,
-                    angle_x=-1,
-                    angle_y=-1,
-                    band=-1,
-                    time=20,
-                    x=-1,
-                    y=-1,
-                ),
-                format_name="zarr",
             )
             print(ds)
             constants.LOG.info(f"Writing of cube to {data_id_mod} started.")
@@ -85,9 +71,6 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Cube {data_id_mod} already retrieved.")
 
     time_ranges = generate_time_interval()
-    time_ranges = (
-        ("2019-02-10", "2020-02-10"),
-    )
     for time_idx, time_range in enumerate(time_ranges):
         data_id_mod = data_id.replace(".zarr", f"_{time_idx}.zarr")
         for attempt in range(1, 4):

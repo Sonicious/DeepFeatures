@@ -63,8 +63,8 @@ if __name__ == "__main__":
 
     # loop over sites
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for loc_idx in range(0, 1):
-        for time_idx in range(2):
+    for loc_idx in range(606, 607):
+        for time_idx in range(1, 2):
             constants.LOG.info(f"Generation of cube {loc_idx:04}_{time_idx} started.")
 
             path = (

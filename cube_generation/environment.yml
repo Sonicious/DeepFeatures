@@ -7,7 +7,7 @@ dependencies:
   - sen2nbar
   - spyndex
   - utm
-  - xcube >= 1.11.0
+  - xcube >=1.11.0
   - xcube-cds >=0.9.3
-  - xcube-stac >=1.0.0
+  - xcube-stac >=1.1.0
   - zappend
