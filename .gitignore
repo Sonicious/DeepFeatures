@@ -1,5 +1,6 @@
 # ignore data used for the cube generation
 temp/
+evaluation/
 
 # IntelliJ / PyCharm
 .idea
@@ -112,4 +113,4 @@ venv.bak/
 *~
 
 # remove credentials
-*.json
+*.json"cube_analysis/*.csv" 

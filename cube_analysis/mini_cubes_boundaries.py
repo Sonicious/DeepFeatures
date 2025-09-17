@@ -3,7 +3,7 @@ import pickle
 import xarray as xr
 import numpy as np
 from tqdm import tqdm
-from prepare_si_dataset import prepare_cube
+from dataset.prepare_si_dataset import prepare_cube
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 

@@ -83,7 +83,7 @@ class MultiScaleAttentionBlock(nn.Module):
 
 
 class ConvAttentionBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, reduction_ratio=8):
+    def __init__(self, in_channels, out_channels, kernel_size=3, reduction_ratio=8, attention_kernel=7):
         super(ConvAttentionBlock, self).__init__()
 
         # Single convolution with the specified kernel size
@@ -93,7 +93,7 @@ class ConvAttentionBlock(nn.Module):
         )
 
         # CBAM attention mechanism
-        self.attention = CBAMBlock(out_channels, reduction=reduction_ratio)
+        self.attention = CBAMBlock(out_channels, reduction=reduction_ratio, kernel_size=attention_kernel)
 
     def forward(self, x):
         # Apply convolution

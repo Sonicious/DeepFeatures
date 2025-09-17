@@ -2,7 +2,7 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns  # Optional for better-looking plots
-from si_dataset import ds
+from dataset.si_dataset import ds
 import numpy as np
 
 # Get the directory of the current script
@@ -20,7 +20,7 @@ with open(pickle_file_path, "rb") as f:
     percentile_bounds = pickle.load(f)
 
 # Directory to save the plots
-output_dir = "distribution_plots"
+output_dir = "../distribution_plots"
 #output_dir = "dist_plots"
 os.makedirs(output_dir, exist_ok=True)  # Create the directory if it doesn't exist
 

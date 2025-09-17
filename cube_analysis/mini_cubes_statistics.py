@@ -3,9 +3,8 @@ import pickle
 import xarray as xr
 import numpy as np
 from tqdm import tqdm
-from prepare_si_dataset import prepare_cube
+from dataset.prepare_si_dataset import prepare_cube
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import time
 
 # Path to the directory containing the minicubes
 minicube_dir = "/net/data_ssd/deepfeatures/trainingcubes"  # Replace with the actual path
@@ -20,15 +19,6 @@ prepared_first_ds = prepare_cube(xr.open_zarr(first_cube_path)["s2l2a"])
 variables = list(prepared_first_ds.data_vars)
 print(f"Variables found: {variables}")
 
-# Load percentile boundaries
-percentile_path = "./98_percentile_mini_cubes.pkl"
-if os.path.exists(percentile_path):
-    print(f"Loading percentile boundaries from {percentile_path}")
-    with open(percentile_path, "rb") as f:
-        percentile_bounds = pickle.load(f)
-else:
-    raise FileNotFoundError(f"Percentile boundaries file not found: {percentile_path}")
-
 # Function to compute mean and standard deviation incrementally
 def compute_mean_std(data_sum, data_sq_sum, count):
     mean = data_sum / count
@@ -37,14 +27,15 @@ def compute_mean_std(data_sum, data_sq_sum, count):
     return mean, std_dev
 
 # Function to process a single minicube
-def process_minicube_for_stats(path, var, lower_bound, upper_bound):
+def process_minicube_for_stats(path, var):
     try:
-        ds = xr.open_zarr(path)
-        prepared_ds = prepare_cube(ds["s2l2a"])
+        da = xr.open_zarr(path)
+        da = da.s2l2a.where((da.cloud_mask == 0))
+        prepared_ds = prepare_cube(da)
+
         if var in prepared_ds:
             data = prepared_ds[var].values
             # Apply percentile bounds to exclude outliers
-            data = np.where((data >= lower_bound) & (data <= upper_bound), data, np.nan)
             data = data[~np.isnan(data)]  # Remove NaN values
             data_sum = np.sum(data)
             data_sq_sum = np.sum(data ** 2)
@@ -57,7 +48,7 @@ def process_minicube_for_stats(path, var, lower_bound, upper_bound):
     return 0, 0, 0
 
 # Load existing results if they exist
-output_path = "./mean_std_mini_cubes.pkl"
+output_path = "../mean_std_mini_cubes_rm_cloud.pkl"
 if os.path.exists(output_path):
     print(f"Loading existing results from {output_path}")
     with open(output_path, "rb") as f:
@@ -72,20 +63,21 @@ for var in variables:
         print(f"Skipping already processed variable: {var}")
         continue
 
-    if var not in percentile_bounds:
-        print(f"No percentile bounds found for variable {var}. Skipping.")
-        continue
-
-    lower_bound, upper_bound = percentile_bounds[var]
-    print(f"Processing variable: {var} with bounds: lower={lower_bound}, upper={upper_bound}")
+    #if var not in percentile_bounds:
+    #    print(f"No percentile bounds found for variable {var}. Skipping.")
+    #    continue
+#
+    #lower_bound, upper_bound = percentile_bounds[var]
+    #print(f"Processing variable: {var} with bounds: lower={lower_bound}, upper={upper_bound}")
     total_sum = 0
     total_sq_sum = 0
     total_count = 0
 
     # Use multiprocessing to load data
-    with ProcessPoolExecutor(max_workers=24) as executor:
+    #max_workers=32
+    with ProcessPoolExecutor() as executor:
         futures = {
-            executor.submit(process_minicube_for_stats, path, var, lower_bound, upper_bound): path
+            executor.submit(process_minicube_for_stats, path, var): path
             for path in minicube_paths
         }
         with tqdm(total=len(minicube_paths), desc=f"Processing minicubes for {var}") as pbar:
