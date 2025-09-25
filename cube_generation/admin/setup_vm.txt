@@ -20,10 +20,20 @@ ssh eouser@x.x.x.x (IP address)
 Install mircomamba:
     curl -L https://micro.mamba.pm/install.sh | bash
     source ~/.bashrc
-    micromamba –version
+    micromamba --version
+    sudo apt install vim
+    sudo apt install tmux
     micromamba activate base
-    micromamba install -c conda-forge spyndex sen2nbar utm xcube-stac
     git clone https://github.com/Sonicious/DeepFeatures.git
+    micromamba install -c conda-forge spyndex sen2nbar utm xcube-stac
     scp cube_generation/cdse-credentials.json eouser@x.x.x.x:/home/eouser/DeepFeatures/cube_generation/
     scp cube_generation/s3-credentials.json eouser@x.x.x.x:/home/eouser/DeepFeatures/cube_generation/
 
+
+
+ssh eouser@46.60.20.4
+ssh eouser@46.60.22.209
+ssh eouser@46.60.16.60
+ssh eouser@46.60.23.100
+ssh eouser@46.60.20.142
+ssh eouser@46.60.21.150
