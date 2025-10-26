@@ -326,3 +326,12 @@ def select_timestamps_from_sections(chunk, coords, section_lengths, num_select_p
     ])
 
     return updated_chunk, updated_coords
+
+
+def extract_center_coordinates(coords):
+    # Extract center coordinates as arrays
+    center_time = coords['time'][0, coords['time'].shape[1] // 2]  # Single time value
+    center_xs = coords['x'][:, coords['x'].shape[1] // 2]  # Flattened
+    center_ys = coords['y'][:, coords['y'].shape[1] // 2]  # Flattened
+
+    return center_time, center_xs, center_ys
