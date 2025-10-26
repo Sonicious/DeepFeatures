@@ -1,9 +1,37 @@
 import pickle
 import spyndex
-import xarray as xr
 import numpy as np
-from typing import Dict, Tuple, List
-from ml4xcube.preprocessing import normalize
+import xarray as xr
+from typing import Dict, Union, List
+
+
+def normalize(ds: Union[xr.Dataset, Dict[str, np.ndarray]], range_dict: Dict[str, List[float]], filter_var: str = None) -> Union[xr.Dataset, Dict[str, np.ndarray]]:
+    """
+    Normalize all variables in the dataset or dictionary using the provided range dictionary.
+
+    Args:
+        ds (Union[xr.Dataset, Dict[str, np.ndarray]]): The xarray dataset  or dictionary to normalize.
+        range_dict (Dict[str, List[float]]): Dictionary with min and max values for each variable.
+        filter_var (str): Variable name to exclude from normalization, such as a mask variable (e.g., 'land_mask').
+
+    Returns:
+        Union[xr.Dataset, Dict[str, np.ndarray]]: The normalized dataset or dictionary.
+    """
+    normalized_ds = ds.copy()
+    data_vars = normalized_ds.data_vars if isinstance(normalized_ds, xr.Dataset) else normalized_ds.keys()
+    for var in data_vars:
+        if var == 'split' or var == filter_var: continue
+        if var in range_dict:
+            xmin, xmax = range_dict[var]
+            if xmax != xmin:
+                normalized_data = (ds[var] - xmin) / (xmax - xmin)
+                if isinstance(normalized_ds, xr.Dataset):
+                    normalized_ds[var] = normalized_data
+                else:
+                    normalized_ds[var] = normalized_data
+            else:
+                normalized_ds[var] = ds[var]  # If xmin == xmax, normalization isn't possible
+    return normalized_ds
 
 
 def normalize_dataarray(da: xr.DataArray, range_dict: Dict[str, List[float]]) -> xr.DataArray:
@@ -38,7 +66,7 @@ def normalize_dataarray(da: xr.DataArray, range_dict: Dict[str, List[float]]) ->
 
 
 
-def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, compute_SI = False) -> xr.DataArray:
+def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, compute_SI = False, load_b01b09=False) -> xr.DataArray:
     """
     Prepares an input DataArray with shape (band, time, y, x) by computing selected spectral indices
     and stacking the result into a single DataArray with shape (index, time, y, x).
@@ -51,7 +79,8 @@ def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, com
         xr.DataArray: Output cube with dimensions (index, time, y, x)
     """
     da = da.clip(min=0, max=1)
-    da = da.sel(band=[b for b in da.band.values if b not in ["B01", "B09"]])
+    if not load_b01b09:
+        da = da.sel(band=[b for b in da.band.values if b not in ["B01", "B09"]])
     bands = da['band'].values
 
     if min_max_dict is None:
@@ -148,6 +177,8 @@ def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, com
         all_indices.remove("MSR705")
         all_indices.remove("TGI")
 
+        print(all_indices)
+
 
         # === Step 3: Compute spectral indices ===
         index_result = spyndex.computeIndex(
@@ -156,7 +187,7 @@ def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, com
             all_indices,
 
             # Bands
-            #A=da.sel(band="B01"),
+            A=da.sel(band="B01"),
             B=da.sel(band="B02"),
             G=da.sel(band="B03"),
             R=da.sel(band="B04"),
@@ -230,12 +261,14 @@ def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, com
     # index_result has dimensions (index, time, y, x), we now add bands
     bands_da = xr.concat([all_bands[var] for var in all_bands.data_vars], dim="index")
     bands_da = bands_da.assign_coords(index=("index", list(all_bands.data_vars.keys())))
-    #index_result = normalize_dataarray(index_result, min_max_dict)
-    #index_result = index_result.clip(0, 1)
+    if compute_SI:
+        index_result = normalize_dataarray(index_result, min_max_dict)
+        index_result = index_result.clip(0, 1)
 
-    # Normalize both bands and indices (together)
-    #full_stack = xr.concat([bands_da, index_result], dim="index")
-    full_stack = bands_da
+        # Normalize both bands and indices (together)
+        full_stack = xr.concat([bands_da, index_result], dim="index")
+    else:
+        full_stack = bands_da
     if to_ds:
         index_values = full_stack.index.values
         data_vars = {str(idx): full_stack.sel(index=idx).drop_vars('index') for idx in index_values}
@@ -244,7 +277,6 @@ def prepare_spectral_data(da: xr.DataArray, min_max_dict=None, to_ds = True, com
 
         full_stack = full_stack.map(lambda da: da.clip(0, 1))
     else:
-        print('da')
         full_stack = normalize_dataarray(full_stack, min_max_dict)
         full_stack = full_stack.clip(0, 1)
 
