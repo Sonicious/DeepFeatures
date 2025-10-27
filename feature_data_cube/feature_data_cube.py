@@ -372,9 +372,7 @@ class XrFeatureDataset:
 
 
 #s1_d2_ckpt = '../checkpoints/003_025_072_test/s1_s2_3/ae-9-epoch=93-val_loss=2.035e-03.ckpt'
-checkpoint_path = '../checkpoints/s2/ae-7-epoch=113-val_loss=2.161e-03.ckpt'
-
-checkpoint_path = "../checkpoints/149_002_018_080_test/1/ae-7-epoch=106-val_loss=4.960e-03.ckpt"
+checkpoint_path = "../checkpoints/ae-7-epoch=106-val_loss=4.960e-03.ckpt"
 device = torch.device("cuda:3")
 
 #model = TransformerAE(dbottleneck=7, channels=149, num_reduced_tokens=5).eval()
