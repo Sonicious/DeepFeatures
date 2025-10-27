@@ -78,27 +78,28 @@ def init_output_from_source(da, feature_names, out_path):
         ys = ds0["y"].values
         return ds0, empty_times, xs, ys
 
-    # Crops: time[5:-5], y[7:-7], x[7:-7]
-    da_c = da.isel(time=slice(5, -5), y=slice(7, -7), x=slice(7, -7), band=slice(0, 10))
+    # --- compute strict keep times on the same array you iterate over ---
+    # Optional crop to avoid borders (keep if you want it strict)
+    da_c = da.isel(time=slice(5, -5), y=slice(7, -7), x=slice(7, -7))
+    #da_c = da.isel(time=slice(5, -5), y=slice(7, -7), x=slice(7, -7), band=slice(0, 12))
 
-    # "Complete pixel" per time = all bands valid (no NaNs) -> boolean (time, y, x)
-    complete_px = np.isfinite(da_c).all(dim="band")        # (time,y,x) -> bool
-    frac_complete = complete_px.mean(dim=("y", "x"))       # (time,)
 
-    # Filter (>= 5%)
-    okA = (frac_complete >= 0.05).compute().values  # (time,) bool np.ndarray
+    # Decide which bands define "completeness" (strict)
+    # If your da now has 149 channels after prepare_spectral_data,
+    # and you want strictness on the original 10 S2 reflectances, slice them:
+    bands_for_check = da_c.isel(index=slice(0, 10))
 
-    # ---------- Keep times that satisfy A OR B ----------
-    keep_mask = okA
+    # Complete pixel = ALL chosen bands valid (strict)
+    complete_px = bands_for_check.notnull().all(dim="index")  # (time,y,x)
+    frac_complete = complete_px.mean(dim=("y", "x"))  # (time,)
+    keep_mask = (frac_complete >= 0.05).compute().values  # strict 5%
 
-    ok_idx = np.flatnonzero(keep_mask)  # integer positions
+    ok_idx = np.flatnonzero(keep_mask)
     times_ok_ns = np.asarray(da_c.time.values)[ok_idx]
 
-    #  Cropped target coordinates
     global_xs = da.x.values[7:-7]
     global_ys = da.y.values[7:-7]
 
-    # Create Zarr with exactly these times
     ds0 = create_empty_dataset(
         feature_names=feature_names,
         xs=global_xs,
@@ -323,7 +324,8 @@ class XrFeatureDataset:
 
         data = chunk.values
 
-        valid_pixel_mask  = np.isnan(data[:, 5, 7:-7, 7:-7])#.any(axis=0)
+
+        valid_pixel_mask  = np.isnan(data[:12, 5, 7:-7, 7:-7])#.any(axis=0)
         nan_count = valid_pixel_mask.sum()
         non_nan_count = (~valid_pixel_mask).sum()
 
@@ -340,11 +342,11 @@ class XrFeatureDataset:
             self.chunk_idx = ((self.chunk_idx // 16) + 1) * 16 - 1
             self.save_frame = False
             print(f'Setting flag save frame to {self.save_frame}')
-            return None, None, None, None, None, None
+            return None, None, None, None
 
         if non_nan_count == 0:
 
-            return None, None, None, None, None, None
+            return None, None, None, None
 
 
         print(f'Splitting chunk {self.chunk_idx}')
@@ -361,29 +363,25 @@ class XrFeatureDataset:
 
         if patches_all.shape[0] == 0 and not_val: self.save_frame = False
 
-        if patches_all.shape[0] == 0: return None, None, None, None, None, None
+        if patches_all.shape[0] == 0: return None, None, None, None
 
 
         time_gaps_s2 = compute_time_gaps(coords_all['time'])
-        time_gaps_s1 = compute_time_gaps(coords_all['time_add'])
-        time_add = coords_all["time_add"][:, 5].astype("datetime64[D]").astype("int64")
-        time_ref = coords_all["time"][:, 5].astype("datetime64[D]").astype("int64")
 
-        # difference in days as torch tensor
-        time_gaps_c = torch.abs(torch.from_numpy(time_add - time_ref)).view(-1, 1)
-
-
-        return patches_all, coords_all, valid_mask_all, time_gaps_s1, time_gaps_s2, time_gaps_c
+        return patches_all, coords_all, valid_mask_all, time_gaps_s2
 
 
 #s1_d2_ckpt = '../checkpoints/003_025_072_test/s1_s2_3/ae-9-epoch=93-val_loss=2.035e-03.ckpt'
-s1_d2_ckpt = '../checkpoints/s2/ae-7-epoch=113-val_loss=2.161e-03.ckpt'
-device = torch.device("cuda:2")
+checkpoint_path = '../checkpoints/s2/ae-7-epoch=113-val_loss=2.161e-03.ckpt'
 
-model = TransformerAE(dbottleneck=7, channels=149, num_reduced_tokens=5).eval()
+checkpoint_path = "../checkpoints/149_002_018_080_test/1/ae-7-epoch=106-val_loss=4.960e-03.ckpt"
+device = torch.device("cuda:3")
+
+#model = TransformerAE(dbottleneck=7, channels=149, num_reduced_tokens=5).eval()
+model = TransformerAE(dbottleneck=7).eval()
 
 
-checkpoint = torch.load(s1_d2_ckpt, map_location=device)
+checkpoint = torch.load(checkpoint_path, map_location=device)
 model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 model.eval()
@@ -393,7 +391,7 @@ model.eval()
 
 batch_size = 200
 
-cube_nums = ['016', '039']
+cube_nums = ['017', '039']
 
 for cube_num in cube_nums:
 
@@ -401,34 +399,29 @@ for cube_num in cube_nums:
 
     print(f'processing cube {cube_num}')
 
-    ds = xr.open_zarr(f'/net/data_ssd/deepfeatures/sciencecubes/{cube_num}zarr')
+    ds = xr.open_zarr(f'/net/data/deepfeatures/sciencecubes/{cube_num}.zarr')
 
     da = ds.s2l2a.where((ds.cloud_mask == 0))
     n_total = da.sizes["band"] * da.sizes["y"] * da.sizes["x"]
-    threshold = int(n_total * 0.05)
+    threshold = int(n_total * 0.0)
     # Count non-NaN points per time step
     valid_data_count = da.notnull().sum(dim=["band", "y", "x"])
     # Keep only time steps with at least 3.5% valid data
-    da = da.sel(time=valid_data_count >= threshold)
+    da = da.sel(time=valid_data_count > threshold)
 
-    if chunks is None: chunks = {"time": 1, "y": 1000, "x": 1000}
-    da = da.chunk(chunks)
+    #if chunks is None: chunks = {"time": 1, "y": 1000, "x": 1000}
+    da = da.chunk({"time": 1, "y": 1000, "x": 1000})
     da = prepare_spectral_data(da, to_ds=False, compute_SI=True, load_b01b09=True)
-
-
 
     feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07']
 
 
     init_path = f"/net/dat/deepfeatures/sciencecubes/{cube_num}.zarr"
     output_path = f"/net/data/deepfeatures/sciencecubes/feature_{cube_num}.zarr"
-    ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(ds, feature_names, output_path)
+    ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(da, feature_names, output_path)
+    print(times_ok_ns)
 
     print(f'creating feature_{cube_num}.zarr')
-
-
-    print(ds0)
-
 
 
     x_to_idx = {float(v): i for i, v in enumerate(global_xs)} #['2016-12-27T10:54:42.026000000'
@@ -441,7 +434,7 @@ for cube_num in cube_nums:
     current_time = None
 
     dataset = XrFeatureDataset(
-        data_cube=ds,
+        data_cube=da,
         times_ok_ns = times_ok_ns
     )
 
@@ -450,7 +443,7 @@ for cube_num in cube_nums:
         mape_sum = 0.0
         count = 0
         start_time = time.time()
-        processed_data, coords, valid_mask, time_gaps_s1, time_gaps_s2, time_gaps_c = chunk
+        processed_data, coords, valid_mask, time_gaps_s2, = chunk
         if processed_data is None: N = 0
         else:
             N = processed_data.shape[0]
@@ -523,5 +516,4 @@ for cube_num in cube_nums:
 
 
 
-#print(da)
 
