@@ -1,17 +1,16 @@
-from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
-import torch.optim as optim
-import lightning.pytorch as pl
-try:
-    from model.attention import TemporalPositionalEmbedding
-    from model.loss import WeightedMaskedLoss
-    from model.model_blocks import *
-except:
-    from attention import TemporalPositionalEmbedding
-    from loss import WeightedMaskedLoss
-    from model_blocks import *
-
 import torch
 import torch.nn as nn
+import torch.optim as optim
+import lightning.pytorch as pl
+from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
+try:
+    from model.loss import WeightedMaskedLoss
+    from model.attention import TemporalPositionalEmbedding
+    from model.model_blocks import *
+except:
+    from loss import WeightedMaskedLoss
+    from attention import TemporalPositionalEmbedding
+    from model_blocks import *
 
 
 def compute_cumulative_positions(time_gaps):
@@ -177,7 +176,7 @@ class TransformerAE(pl.LightningModule):
             d_model=self.d_model, max_position=max_position
         )
 
-        transformer_shared = nn.TransformerEncoder(
+        self.transformer_shared = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=d_model,
                 nhead=8,
@@ -193,7 +192,7 @@ class TransformerAE(pl.LightningModule):
             dbottleneck=dbottleneck,
             in_channels=channels,
             positional_embedding=self.positional_embedding_shared,
-            transformer_emc=transformer_shared,
+            transformer_emc=self.transformer_shared,
             frames=frames,
             d_model=d_model,
             num_reduced_tokens=num_reduced_tokens
@@ -205,7 +204,7 @@ class TransformerAE(pl.LightningModule):
             out_channels=channels,
             frames=frames,
             positional_embedding=self.positional_embedding_shared,
-            transformer_dec=transformer_shared,
+            transformer_dec=self.transformer_shared,
             d_model=d_model,
             num_reduced_tokens=num_reduced_tokens
         )
@@ -317,7 +316,6 @@ class TransformerAE(pl.LightningModule):
 def main():
     # Define model parameters
     frames = 11  # Number of frames we want to consider
-    max_position = 50  # Maximum position index for embeddings
     batch_size = 2  # Batch size for dummy data
 
     # Instantiate the model
