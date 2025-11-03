@@ -63,8 +63,8 @@ if __name__ == "__main__":
 
     # loop over sites
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for loc_idx in range(606, 607):
-        for time_idx in range(1, 2):
+    for loc_idx in range(0, 4607):
+        for time_idx in range(0, 2):
             constants.LOG.info(f"Generation of cube {loc_idx:04}_{time_idx} started.")
 
             path = (
@@ -73,7 +73,7 @@ if __name__ == "__main__":
             )
             if super_store["store_team"].has_data(path):
                 constants.LOG.info(f"Cube {path} already generated.")
-                #continue
+                continue
 
             # get Sentinel-2 data
             cube = get_datasets.get_s2l2a_single_training_year(
@@ -94,7 +94,9 @@ if __name__ == "__main__":
                 time_range_start=time_range_start,
                 time_range_end=time_range_end,
             )
+            attrs = utils.correct_attrs(cube, attrs)
             cube.attrs.update(attrs)
+            
 
             # apply BRDF correction
             cube = utils.apply_nbar(cube)

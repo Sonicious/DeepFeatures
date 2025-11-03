@@ -7,6 +7,7 @@ from sen2nbar import c_factor
 import spyndex
 import utm
 import xarray as xr
+from xcube.core.gridmapping import GridMapping
 
 from constants import BANDID_TRANSLATOR
 from constants import DT_START
@@ -78,6 +79,48 @@ def readin_sites_parameters(
         cube_attrs["time_range_end"] = DT_END
 
     return cube_attrs
+
+
+def correct_attrs(cube: xr.Dataset, attrs: dict) -> dict:
+    cube_mod = cube.drop_vars(
+        [
+            "solar_angle", 
+            "viewing_angle",
+            "angle_x",
+            "angle_y",
+            "band",
+            "angle"
+        ]
+    )
+    gm = GridMapping.from_dataset(cube_mod)
+    zone_number =  attrs["utm_zone"][:2]
+    zone_letter = attrs["utm_zone"][2]
+    cube_zone_number = str(gm.crs.to_epsg())[-2:]
+    if zone_number != cube_zone_number:
+        attrs["utm_zone"] = cube_zone_number + zone_letter
+        attrs["bbox_utm"] = gm.xy_bbox
+        attrs["center_utm"] = (
+            (gm.xy_bbox[0] + gm.xy_bbox[2]) / 2, 
+            (gm.xy_bbox[1] + gm.xy_bbox[3]) / 2
+        )
+        # transform the bounds to lat lon
+        point_west_south = utm.to_latlon(
+            attrs["bbox_utm"][0], attrs["bbox_utm"][1], int(cube_zone_number), zone_letter
+        )
+        point_east_north = utm.to_latlon(
+            attrs["bbox_utm"][2], attrs["bbox_utm"][3], int(cube_zone_number), zone_letter
+        )
+        attrs["bbox_wgs84"] = [
+            float(point_west_south[1]),
+            float(point_west_south[0]),
+            float(point_east_north[1]),
+            float(point_east_north[0]),
+        ]
+        attrs["center_wgs84"] = utm.to_latlon(
+            attrs["center_utm"][0], attrs["center_utm"][1], int(cube_zone_number), zone_letter
+        )
+    return attrs
+        
 
 
 def create_utm_bounding_box(

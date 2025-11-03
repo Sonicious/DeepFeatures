@@ -35,7 +35,7 @@ def get_s2l2a(
                 f"Check dataset with data ID {data_id_year} for nan values"
             )
             threshold = 10
-            assert_dataset_nan(ds, threshold)
+            _ = assert_dataset_nan(ds, threshold)
         ds = ds.isel(x=slice(-1000, None), y=slice(-1000, None))
         dss.append(ds)
 
@@ -80,8 +80,10 @@ def get_s2l2a_single_training_year(
     ds = super_store["store_team"].open_data(data_id)
     if check_nan:
         constants.LOG.info(f"Check dataset with data ID {data_id} for nan values")
-        threshold = 1
-        assert_dataset_nan(ds, threshold)
+        threshold = 10
+        exceeded = assert_dataset_nan(ds, threshold, no_angles=True)
+        if exceeded:
+            return None
     ds = ds.isel(x=slice(0, 90), y=slice(0, 90))
 
     # add attributes
@@ -231,6 +233,9 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
     # clip LC dataset by time
     start = cube.time[0] - np.timedelta64(365, "D")
     end = cube.time[-1] + np.timedelta64(365, "D")
+    if start > np.datetime64('2021-01-01T00:00:00'):
+        start = np.datetime64('2020-01-01T00:00:00')
+        end = np.datetime64('2022-12-31T00:00:00')
     lc = lc.sel(time=slice(start, end))
 
     lc.rio.write_crs(lc.crs.attrs["wkt"], inplace=True)
@@ -299,9 +304,13 @@ def add_reprojected_lccs(super_store: dict, cube: xr.Dataset) -> xr.Dataset:
         lc_first_percentage.append(float(counts[idx] / arr.size))
         vals = np.delete(vals, idx)
         counts = np.delete(counts, idx)
-        idx = np.argmax(counts)
-        lc_second.append(int(vals[idx]))
-        lc_second_percentage.append(float(counts[idx] / arr.size))
+        if counts.size > 0:
+            idx = np.argmax(counts)
+            lc_second.append(int(vals[idx]))
+            lc_second_percentage.append(float(counts[idx] / arr.size))
+        else:
+            lc_second.append("Only one class found.")
+            lc_second_percentage.append("Only one class found.")
     cube.attrs["landcover_first"] = lc_first
     cube.attrs["landcover_first_percentage"] = lc_first_percentage
     cube.attrs["landcover_second"] = lc_second
@@ -420,11 +429,29 @@ def add_era5(super_store: dict, cube: xr.Dataset, sel_time=False) -> xr.Dataset:
         long_name="Vapour pressure deficit (computed)",
         units="Pa",
     )
+
     era5_cube = era5.interp(
         lat=cube.attrs["center_wgs84"][0],
         lon=cube.attrs["center_wgs84"][1],
         method="linear",
     )
+    if np.all(np.isnan(era5_cube.d2m.values)):
+        # Find closest non-nan value
+        df = era5.isel(time=0)[['lat', 'lon', 'd2m']].to_dataframe().reset_index()
+        df = df.dropna(subset=['d2m'])
+        df['distance'] = np.sqrt(
+            (df['lat'] - cube.attrs["center_wgs84"][0])**2 +
+            (df['lon'] - cube.attrs["center_wgs84"][1])**2
+        )
+        nearest_valid = df.loc[df['distance'].idxmin()]
+        constants.LOG.info(
+            f"ERA5-Land has nan values; closest non-NaN values is "
+            f"taken. Distance to center: {nearest_valid["distance"]:.4}°"
+        )
+        era5_cube = era5.sel(
+            lat=nearest_valid["lat"],
+            lon=nearest_valid["lon"],
+        )
     era5_cube = era5_cube.drop(["lat", "lon"])
 
     # aggregate from hourly to daily
@@ -644,9 +671,16 @@ def _aggregate_era5(era5: xr.Dataset, mode: str) -> xr.Dataset:
     return era5_mode
 
 
-def assert_dataset_nan(ds: xr.Dataset, threshold: float | int) -> bool:
+def assert_dataset_nan(ds: xr.Dataset, threshold: float | int, no_angles: bool = False) -> bool:
+    exceeded = False
     for key in list(ds.keys()):
+        if no_angles and key in ["solar_angle", "viewing_angle"]:
+            continue
         array = ds[key].values.ravel()
         null_size = array[np.isnan(array)].size
         perc = (null_size / array.size) * 100
-        constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
+        if perc > threshold:
+            constants.LOG.info(f"Data variable {key} has {perc:.3f}% nan values.")
+            exceeded = True
+            break
+    return exceeded

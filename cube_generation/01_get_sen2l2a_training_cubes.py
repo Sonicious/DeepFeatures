@@ -10,12 +10,25 @@ from version import version
 import constants
 
 
-def generate_time_interval() -> tuple[tuple[str, str], tuple[str, str]]:
+def generate_time_interval(super_store: dict, data_id: str) -> tuple[tuple[str, str], tuple[str, str]]:
     dt_start = datetime.date.fromisoformat(constants.DT_START)
     dt_end = datetime.date.fromisoformat(constants.DT_END)
     nb_days = (dt_end - dt_start).days
     half_year = constants.TRAINING_TEMPORAL_RANGE_DAYS // 2
-    delta_days0 = np.random.randint(half_year, nb_days - half_year)
+    data_id_mod = data_id.replace(".zarr", f"_0.zarr")
+    if super_store["store_team"].has_data(data_id_mod):
+        ds = super_store["store_team"].open_data(data_id_mod)
+        
+        t0 = np.datetime_as_string(ds.time[0].values, unit="D")
+        t1 = np.datetime_as_string(ds.time[-1].values, unit="D")
+        
+        dt0 = datetime.date.fromisoformat(t0)
+        dt1 = datetime.date.fromisoformat(t1)
+
+        mid_date = dt0 + (dt1 - dt0) / 2
+        delta_days0 = (mid_date - dt_start).days
+    else:
+        delta_days0 = np.random.randint(half_year, nb_days - half_year)
     if delta_days0 < nb_days / 2:
         delta_days1 = np.random.randint(
             delta_days0 + 3 * half_year, nb_days - half_year
@@ -78,7 +91,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
         else:
             constants.LOG.info(f"Cube {data_id_mod} already retrieved.")
 
-    time_ranges = generate_time_interval()
+    time_ranges = generate_time_interval(super_store, data_id)
     for time_idx, time_range in enumerate(time_ranges):
         data_id_mod = data_id.replace(".zarr", f"_{time_idx}.zarr")
         num_attempts = 1
