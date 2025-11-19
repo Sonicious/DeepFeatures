@@ -11,8 +11,8 @@ _DIR = Path(__file__).parent.resolve()
 sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
 
 # Define latitude and longitude points
-y = sites_params["center_lat"].values
-x = sites_params["center_lon"].values
+y = sites_params["lat"].values
+x = sites_params["lon"].values
 
 points = [{"latitude": y[i], "longitude": x[i]} for i in range(len(x))]
 

@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     # loop over sites
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_TRAINING)
-    for loc_idx in range(0, 4607):
+    for loc_idx in range(2569, 2570):
         for time_idx in range(0, 2):
             constants.LOG.info(f"Generation of cube {loc_idx:04}_{time_idx} started.")
 
@@ -72,8 +72,26 @@ if __name__ == "__main__":
                 f"{loc_idx:04}_{time_idx}.zarr"
             )
             if super_store["store_team"].has_data(path):
-                constants.LOG.info(f"Cube {path} already generated.")
-                continue
+                ds = super_store["store_team"].open_data(path)
+                data_id_temp = (
+                    f"cubes/temp/{constants.TRAINING_FOLDER_NAME}/{version}/"
+                    f"{loc_idx:04}_{time_idx}.zarr"
+                )   
+                if not super_store["store_team"].has_data(data_id_temp):
+                    constants.LOG.info(
+                        f"Cube {path} exsists, but {data_id_temp} does not. Deleting {path}."
+                    )
+                    super_store["store_team"].delete_data(path)
+                    continue
+                ds_temp = super_store["store_team"].open_data(data_id_temp)
+                if ds.time[0] == ds_temp.time[0]:
+                    constants.LOG.info(f"Cube {path} already generated.")
+                    continue
+                else:
+                    constants.LOG.info(
+                        f"Cube {path} different time than {data_id_temp}. "
+                        f"Cube will be newly assembled."
+                    )
 
             # get Sentinel-2 data
             cube = get_datasets.get_s2l2a_single_training_year(

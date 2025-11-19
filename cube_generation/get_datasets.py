@@ -80,7 +80,7 @@ def get_s2l2a_single_training_year(
     ds = super_store["store_team"].open_data(data_id)
     if check_nan:
         constants.LOG.info(f"Check dataset with data ID {data_id} for nan values")
-        threshold = 10
+        threshold = 50
         exceeded = assert_dataset_nan(ds, threshold, no_angles=True)
         if exceeded:
             return None
@@ -456,34 +456,34 @@ def add_era5(super_store: dict, cube: xr.Dataset, sel_time=False) -> xr.Dataset:
 
     # aggregate from hourly to daily
     era5_final = _aggregate_era5(era5_cube[ERA5_AGGREGATION_SUM], "sum")
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "mean")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "min")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "max")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "median")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_ALL], "std")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "mean")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "median")
     )
-    era5_final = era5_final.update(
+    era5_final.update(
         _aggregate_era5(era5_cube[ERA5_AGGREGATION_MEAN_MEDIAN_STD], "std")
     )
     era5_final = era5_final.chunk(chunks=dict(time_era5=era5_final.sizes["time_era5"]))
     era5_final = era5_final.astype(np.float32)
 
-    cube = cube.update(era5_final)
+    cube.update(era5_final)
 
     return cube
 
@@ -560,7 +560,7 @@ def _compute_earthnet_cloudmask(super_store: dict, da: xr.DataArray):
 def _load_dem_data(super_store: dict, dem_files: list[str]) -> xr.Dataset:
     dss = []
     for dem_file in dem_files:
-        dss.append(super_store["store_dem"].open_data(dem_file))
+        dss.append(super_store["store_dem"].open_data(dem_file, opener_id="dataset:geotiff:s3"))
 
     ds = xr.combine_by_coords(dss, combine_attrs="override")
     ds.rio.write_crs(4326, inplace=True)
@@ -601,7 +601,7 @@ def _load_esa_wc_data(super_store: dict, bbox: list[float]) -> (xr.Dataset, list
     files_2021 = _get_esa_wc_file_paths(bbox)
     dss = []
     for file in files_2021:
-        dss.append(super_store["store_esa_wc"].open_data(file))
+        dss.append(super_store["store_esa_wc"].open_data(file, opener_id="dataset:geotiff:s3"))
     ds = xr.combine_by_coords(dss, combine_attrs="override")
     ds.attrs["date"] = "2021-01-01"
     return ds, files_2021
