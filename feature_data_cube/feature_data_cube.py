@@ -15,6 +15,9 @@ from dataset.prepare_dataarray import prepare_spectral_data
 from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
+CUBE_IDS = ['017', '039']
+BATCH_SIZE = 200
+BASE_PATH = '/net/data/deepfeatures/sciencecubes'
 
 def create_empty_dataset(feature_names, xs, ys, out_path, times=None, dtype=np.float32):
     """
@@ -387,9 +390,9 @@ model.eval()
 
 
 
-batch_size = 200
+batch_size = BATCH_SIZE
 
-cube_nums = ['017', '039']
+cube_nums = CUBE_IDS
 
 for cube_num in cube_nums:
 
@@ -397,7 +400,7 @@ for cube_num in cube_nums:
 
     print(f'processing cube {cube_num}')
 
-    ds = xr.open_zarr(f'/net/data/deepfeatures/sciencecubes/{cube_num}.zarr')
+    ds = xr.open_zarr(f'{BASE_PATH}/{cube_num}.zarr')
 
     da = ds.s2l2a.where((ds.cloud_mask == 0))
     n_total = da.sizes["band"] * da.sizes["y"] * da.sizes["x"]
@@ -414,8 +417,8 @@ for cube_num in cube_nums:
     feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07']
 
 
-    init_path = f"/net/dat/deepfeatures/sciencecubes/{cube_num}.zarr"
-    output_path = f"/net/data/deepfeatures/sciencecubes/feature_{cube_num}.zarr"
+    init_path = f"{BASE_PATH}/{cube_num}.zarr"
+    output_path = f"{BASE_PATH}/feature_{cube_num}.zarr"
     ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(da, feature_names, output_path)
     print(times_ok_ns)
 
