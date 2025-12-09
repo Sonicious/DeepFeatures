@@ -113,4 +113,8 @@ venv.bak/
 *~
 
 # remove credentials
-*.json"cube_analysis/*.csv" 
+*.json"cube_analysis/*.csv"
+
+# no DS_Store files on Mac
+.DS_Store
+
