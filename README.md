@@ -6,7 +6,7 @@ Repository of the ESA project DeepFeatures
 ```bash
 # add date to the environment for organisation issues
 # conflicting zarr versions: https://github.com/xcube-dev/xcube/issues/1102
-conda create -n deepfeatures_YYYYMMDD -c conda-forge --override-channels adlfs boto3 botocore conda-lock cubo dask folium h5netcdf importlib_metadata ipykernel lightning matplotlib ml4xcube netcdf4 pandas pip pyproj python 'pytorch-gpu>2' seaborn scikit-image scikit-learn scipy sen2nbar shapely 'spyndex=0.6' torchaudio torchvision utm xarray 'xcube>=1.8' zappend 'zarr<3' xcube-sh xcube-cds xcube-stac
+conda create -n deepfeatures_YYYYMMDD -c conda-forge --override-channels adlfs boto3 botocore conda-lock cubo dask folium geopandas h5netcdf importlib_metadata ipykernel 'lightning=2.4.0' matplotlib ml4xcube netcdf4 pandas pip pyproj python 'pytorch-gpu=2.4.1' seaborn scikit-image scikit-learn scipy sen2nbar shapely 'spyndex=0.6' torchaudio torchvision utm 'xarray=2024.9.0' 'xcube>=1.8' zappend 'zarr<3' xcube-sh xcube-cds xcube-stac
 conda activate deepfeatures_YYYYMMDD
 pip install global-land-mask
 
