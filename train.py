@@ -1,15 +1,17 @@
 import torch
 import pickle
 import random
+import numpy as np
 import lightning.pytorch as L
 from model.model import TransformerAE
 from dataset.dataset import HDF5Dataset
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SubsetRandomSampler
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import EarlyStopping
 
 torch.set_float32_matmul_precision('medium')  # For better performance
+gpu = 3
 
 
 def set_seed(seed):
@@ -21,19 +23,32 @@ def set_seed(seed):
 
 set_seed(42)
 
+def make_loader(dataset, batch_size, drop_frac=0.5, num_workers=32, pin_memory=True, shuffle=None):
+    N = len(dataset)
+    keep = int((1 - drop_frac) * N)
+    indices = np.random.choice(N, keep, replace=False)
+
+    sampler = SubsetRandomSampler(indices)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        shuffle=shuffle,
+    )
 
 def main():
-    device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
     # Define the parameters
-    batch_size = 16
 
-    train_dataset = HDF5Dataset("train.h5")
-    val_dataset = HDF5Dataset("val.h5")
+    train_dataset = HDF5Dataset("train_si_final.h5")
+    val_dataset = HDF5Dataset("val_si_final.h5")
 
 
     # Create DataLoaders
-    val_iterator   = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=32)
-    train_iterator = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=32)
+    val_iterator   = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=32)
+    train_iterator = make_loader(train_dataset, batch_size=16, num_workers=32)
 
     # Initialize the autoencoder model
     autoencoder = TransformerAE()
@@ -63,7 +78,7 @@ def main():
         log_every_n_steps=10,
         enable_progress_bar=True,
         check_val_every_n_epoch=1,  # Ensure validation is run every epoch
-        devices=[3],
+        devices=[gpu],
         accelerator="gpu",
         callbacks=[checkpoint_callback, early_stopping_callback],
     )

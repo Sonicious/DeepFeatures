@@ -47,40 +47,20 @@ class HDF5Dataset(Dataset):
             - If return_coords is True:
                 tuple: (data, mask, coord_time, coord_x, coord_y)
         """
-        #print('=================================')
-        #print(self.data[index][:, 5, 7, 7])
-        if self.da:
-            data = torch.tensor(self.data[index], dtype=torch.float32).permute(1, 0, 2, 3)
-            mask = torch.tensor(self.mask[index], dtype=torch.bool).permute(1, 0, 2, 3)
+        #print((self.data[index].shape, self.mask[index].shape))
+        data = torch.tensor(self.data[index], dtype=torch.float32)
+        mask = torch.tensor(self.mask[index], dtype=torch.bool)
+        #if self.da:
+        #    data = torch.tensor(self.data[index], dtype=torch.float32).permute(1, 0, 2, 3)
+        #    mask = torch.tensor(self.mask[index], dtype=torch.bool).permute(1, 0, 2, 3)
+#
+        #else:
+        #    data = torch.tensor(self.data[index], dtype=torch.float32).permute(0, 3, 1, 2)
+        #    mask = torch.tensor(self.mask[index], dtype=torch.bool).permute(0, 3, 1, 2)
 
-        else:
-            data = torch.tensor(self.data[index], dtype=torch.float32).permute(0, 3, 1, 2)
-            mask = torch.tensor(self.mask[index], dtype=torch.bool).permute(0, 3, 1, 2)
-
-        #print(data[5, :, 7, 7])
-        #print('=================================')
 
         time_gaps = torch.tensor(self.time_gaps[index], dtype=torch.int32)
 
-
-
-        # Get size of second dimension
-        #dim_size = data.size(1)
-
-        # Create indices excluding index 9
-        #indices = torch.cat((torch.arange(9), torch.arange(10, dim_size)))
-
-        # Remove index 9 from second dimension
-        #data = torch.index_select(data, dim=1, index=indices)
-        #mask = torch.index_select(mask, dim=1, index=indices)
-        #data = data[:, :12, :, :]  # (batch, frames, 12, x, y)
-        #mask = mask[:, :12, :, :]  # (batch, frames, 12, x, y)
-
-        #keep_indices = [i for i in range(12) if i != 9]
-        #keep_indices = [i for i in range(12) if i not in [0,9]]
-#
-        #data = data[:, keep_indices, :, :]
-        #mask = mask[:, keep_indices, :, :]
         if self.return_coords:
             coord_time = torch.tensor(self.coord_time[index], dtype=torch.int64)
             coord_x = torch.tensor(self.coord_x[index], dtype=torch.float32)
