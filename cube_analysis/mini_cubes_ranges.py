@@ -1,100 +1,125 @@
 import os
 import pickle
-import xarray as xr
 import numpy as np
+import xarray as xr
+from collections import defaultdict
 from tqdm import tqdm
-from dataset.prepare_si_dataset import prepare_cube
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Path to the directory containing the minicubes
-minicube_dir = "/net/data_ssd/deepfeatures/trainingcubes"  # Replace with the actual path
+from dataset.prepare_dataarray import prepare_spectral_data
 
-# List all .zarr minicubes in the directory
-minicube_paths = [os.path.join(minicube_dir, f) for f in os.listdir(minicube_dir) if f.endswith(".zarr")]
+# ------------------------------------------------------------------
+# Paths
+# ------------------------------------------------------------------
+base_path = "/net/data/deepfeatures/training/0.1.0"
+output_path = "./all_ranges_no_clouds.pkl"
 
-# Load and prepare the first cube to determine variables
-first_cube_path = minicube_paths[0]
-print(f"Loading the first cube: {first_cube_path}")
-prepared_first_ds = prepare_cube(xr.open_zarr(first_cube_path)["s2l2a"])
-variables = list(prepared_first_ds.data_vars)
-print(f"Variables found: {variables}")
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+def is_new_cube_id(name: str) -> bool:
+    # matches 0000_0.zarr, 1536_1.zarr, etc.
+    return name.endswith(".zarr") and "_" in name
 
-#with open("./min_max_bands_mini_cubes_raw.pkl", "rb") as f:
-#    band_min_max = pickle.load(f)
 
-# Function to process a single minicube for min and max values
-def process_minicube_for_min_max(path, var):
-    #print(f"Processing {path}")
+def ensure_band(da: xr.DataArray) -> xr.DataArray:
+    if "band" in da.dims:
+        return da
+    if "index" in da.dims:
+        return da.rename({"index": "band"})
+    raise ValueError(f"No band/index dim found: {da.dims}")
 
+
+def process_cube_minmax(cube_path: str) -> dict:
+    """
+    Worker: load ONE cube fully, apply cloud mask, prepare spectral data once,
+    then compute per-band min/max. Returns {band: (min, max)}.
+    """
+    ds = xr.open_zarr(cube_path)
     try:
-        da = xr.open_zarr(path)
-        da = da.s2l2a.where((da.cloud_mask == 0))
-        prepared_ds = prepare_cube(da)
+        da = ds.s2l2a.where(ds.cloud_mask == 0)
 
-        if var in prepared_ds:
-            data = prepared_ds[var]
-            # Apply percentile bounds to exclude outliers
-            #print('compute min and max values')
-            band_min = data.min().compute().item()
-            band_max = data.max().compute().item()
-            return band_min, band_max
-        else:
-            print(f"Variable {var} not found in {path}")
-    except Exception as e:
-        print(f"Failed to load or prepare variable {var} from {path}: {e}")
-    return np.inf, -np.inf
+        out = prepare_spectral_data(
+            da,
+            to_ds=False,
+            compute_SI=True,
+            load_b01b09=True,
+        )
+        if out is not None:
+            da = out
 
-# Load existing results if they exist
-output_path = "../min_max_mini_cubes_rm_clouds.pkl"
-#output_path = "./mini_cube_idx_updated.pkl"
+        da = ensure_band(da)
+
+        # Read full cube into memory once (your "cube is small" assumption)
+        da = da.load()
+
+        local = {}
+        for band in da.band.values:
+            arr = da.sel(band=band).values
+            if np.all(np.isnan(arr)):
+                continue
+            local[band] = (float(np.nanmin(arr)), float(np.nanmax(arr)))
+
+        return local
+
+    finally:
+        ds.close()
+
+
+# ------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------
 if os.path.exists(output_path):
-    print(f"Loading existing results from {output_path}")
     with open(output_path, "rb") as f:
-        stats_results = pickle.load(f)
+        all_ranges_no_clouds = pickle.load(f)
+    print(f"✅ Loaded existing {output_path} ({len(all_ranges_no_clouds)} variables)")
+    print(all_ranges_no_clouds)
+
 else:
-    print("No existing results found. Starting fresh.")
-    stats_results = {}
+    print("🆕 Creating all_ranges_no_clouds.pkl from NEW cubes only")
 
+    cube_dirs = sorted(
+        d for d in os.listdir(base_path)
+        if is_new_cube_id(d) and os.path.isdir(os.path.join(base_path, d))
+    )
+    if len(cube_dirs) == 0:
+        raise RuntimeError("No new-style cubes (*_0.zarr, *_1.zarr) found")
 
-# Prepare and compute min and max for all variables
-for var in variables:
-    if var in stats_results:
-        print(f"Skipping already processed variable: {var} with ranges {stats_results[var]}")
-        continue
+    cube_paths = [os.path.join(base_path, d) for d in cube_dirs]
 
-    global_min = np.inf
-    global_max = -np.inf
+    global_min = defaultdict(lambda: np.inf)
+    global_max = defaultdict(lambda: -np.inf)
 
-    # Use multiprocessing to load data
-    with ProcessPoolExecutor(max_workers=16) as executor:
-        futures = {
-            executor.submit(process_minicube_for_min_max, path, var): path
-            for path in minicube_paths
-        }
-        with tqdm(total=len(minicube_paths), desc=f"Processing minicubes for {var}") as pbar:
-            for future in as_completed(futures):
-                local_min, local_max = future.result()
-                global_min = min(global_min, local_min)
-                global_max = max(global_max, local_max)
+    max_workers = 24
+    print(f"⚙️ Using {max_workers} workers; 1 cube per task")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_cube_minmax, p): p for p in cube_paths}
+
+        with tqdm(total=len(cube_paths), desc="Processing cubes (1 per process)") as pbar:
+            for fut in as_completed(futures):
+                cube_path = futures[fut]
+                try:
+                    local = fut.result()
+                except Exception as e:
+                    print(f"❌ Failed cube {os.path.basename(cube_path)}: {e}")
+                    pbar.update(1)
+                    continue
+
+                for band, (mn, mx) in local.items():
+                    if mn < global_min[band]:
+                        global_min[band] = mn
+                    if mx > global_max[band]:
+                        global_max[band] = mx
+
                 pbar.update(1)
 
-    # Skip if no valid data is found for the variable
-    if global_min == np.inf or global_max == -np.inf:
-        print(f"No valid data found for variable {var}. Skipping.")
-        continue
+    all_ranges_no_clouds = {
+        band: [float(global_min[band]), float(global_max[band])]
+        for band in global_min.keys()
+    }
 
-    # Save the min and max values
-    try:
-        print(f"Saving min and max for {var}...")
-        stats_results[var] = [global_min, global_max]
-        print(f"{var} min: {global_min}, max: {global_max}")
+    with open(output_path, "wb") as f:
+        pickle.dump(all_ranges_no_clouds, f)
 
-        # Save progress after each variable
-        print(f"Saving progress to {output_path}")
-        with open(output_path, "wb") as f:
-            pickle.dump(stats_results, f)
-
-    except Exception as e:
-        print(f"Failed to process variable {var}: {e}")
-
-print(f"Min and max values saved to: {output_path}")
+    print(f"✅ Created {output_path} with {len(all_ranges_no_clouds)} variables")

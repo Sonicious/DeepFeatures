@@ -1,111 +1,157 @@
 import os
 import pickle
-import xarray as xr
 import numpy as np
+import xarray as xr
+from collections import defaultdict
 from tqdm import tqdm
-from dataset.prepare_si_dataset import prepare_cube
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Path to the directory containing the minicubes
-minicube_dir = "/net/data_ssd/deepfeatures/trainingcubes"  # Replace with the actual path
+from dataset.prepare_dataarray import prepare_spectral_data
 
-# List all .zarr minicubes in the directory
-minicube_paths = [os.path.join(minicube_dir, f) for f in os.listdir(minicube_dir) if f.endswith(".zarr")]
 
-# Load and prepare the first cube to determine variables
-first_cube_path = minicube_paths[0]
-print(f"Loading the first cube: {first_cube_path}")
-prepared_first_ds = prepare_cube(xr.open_zarr(first_cube_path)["s2l2a"])
-variables = list(prepared_first_ds.data_vars)
-print(f"Variables found: {variables}")
+# ------------------------------------------------------------------
+# Paths
+# ------------------------------------------------------------------
+base_path = "/net/data/deepfeatures/training/0.1.0"
+output_path = "./all_mean_std_no_clouds.pkl"
 
-# Function to compute mean and standard deviation incrementally
-def compute_mean_std(data_sum, data_sq_sum, count):
-    mean = data_sum / count
-    variance = (data_sq_sum / count) - (mean ** 2)
-    std_dev = np.sqrt(variance)
-    return mean, std_dev
 
-# Function to process a single minicube
-def process_minicube_for_stats(path, var):
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+def is_new_cube_id(name: str) -> bool:
+    return name.endswith(".zarr") and "_" in name
+
+
+def ensure_band(da: xr.DataArray) -> xr.DataArray:
+    if "band" in da.dims:
+        return da
+    if "index" in da.dims:
+        return da.rename({"index": "band"})
+    raise ValueError(f"No band/index dim found: {da.dims}")
+
+
+def process_cube_mean_std(cube_path: str) -> dict:
+    """
+    Worker: process ONE cube.
+    Returns {band: (sum, sumsq, count)} for valid (non-NaN) pixels.
+    """
+    ds = xr.open_zarr(cube_path)
     try:
-        da = xr.open_zarr(path)
-        da = da.s2l2a.where((da.cloud_mask == 0))
-        prepared_ds = prepare_cube(da)
+        da = ds.s2l2a.where(ds.cloud_mask == 0)
 
-        if var in prepared_ds:
-            data = prepared_ds[var].values
-            # Apply percentile bounds to exclude outliers
-            data = data[~np.isnan(data)]  # Remove NaN values
-            data_sum = np.sum(data)
-            data_sq_sum = np.sum(data ** 2)
-            count = data.size
-            return data_sum, data_sq_sum, count
-        else:
-            print(f"Variable {var} not found in {path}")
-    except Exception as e:
-        print(f"Failed to load or prepare variable {var} from {path}: {e}")
-    return 0, 0, 0
+        out = prepare_spectral_data(
+            da,
+            to_ds=False,
+            compute_SI=True,
+            load_b01b09=True,
+        )
+        if out is not None:
+            da = out
 
-# Load existing results if they exist
-output_path = "../mean_std_mini_cubes_rm_cloud.pkl"
+        da = ensure_band(da)
+
+        # Load cube once (consistent with your min/max script)
+        da = da.load()
+
+        local = {}
+
+        for band in da.band.values:
+            arr = da.sel(band=band).values
+            valid = np.isfinite(arr)
+
+            if not np.any(valid):
+                continue
+
+            vals = arr[valid]
+            local[band] = (
+                float(vals.sum()),
+                float((vals ** 2).sum()),
+                int(vals.size),
+            )
+
+        return local
+
+    finally:
+        ds.close()
+
+
+# ------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------
 if os.path.exists(output_path):
-    print(f"Loading existing results from {output_path}")
     with open(output_path, "rb") as f:
-        stats_results = pickle.load(f)
+        all_mean_std = pickle.load(f)
+
+    print(f"✅ Loaded existing {output_path} ({len(all_mean_std)} variables)")
+
+    # sort by std (descending)
+    sorted_items = sorted(
+        all_mean_std.items(),
+        key=lambda kv: kv[1][1],   # std is at index 1
+        reverse=True
+    )
+
+    print("📊 Variables sorted by descending std:")
+    for var, (mean, std) in sorted_items:
+        print(f"{var:20s}  mean={mean:.6f}  std={std:.6f}")
+
+
 else:
-    print("No existing results found. Starting fresh.")
-    stats_results = {}
+    print("🆕 Computing mean & std for all variables")
 
-# Prepare and compute mean and standard deviation for all variables
-for var in variables:
-    if var in stats_results:
-        print(f"Skipping already processed variable: {var}")
-        continue
+    cube_dirs = sorted(
+        d for d in os.listdir(base_path)
+        if is_new_cube_id(d) and os.path.isdir(os.path.join(base_path, d))
+    )
+    if len(cube_dirs) == 0:
+        raise RuntimeError("No new-style cubes (*_0.zarr, *_1.zarr) found")
 
-    #if var not in percentile_bounds:
-    #    print(f"No percentile bounds found for variable {var}. Skipping.")
-    #    continue
-#
-    #lower_bound, upper_bound = percentile_bounds[var]
-    #print(f"Processing variable: {var} with bounds: lower={lower_bound}, upper={upper_bound}")
-    total_sum = 0
-    total_sq_sum = 0
-    total_count = 0
+    cube_paths = [os.path.join(base_path, d) for d in cube_dirs]
 
-    # Use multiprocessing to load data
-    #max_workers=32
-    with ProcessPoolExecutor() as executor:
-        futures = {
-            executor.submit(process_minicube_for_stats, path, var): path
-            for path in minicube_paths
-        }
-        with tqdm(total=len(minicube_paths), desc=f"Processing minicubes for {var}") as pbar:
-            for future in as_completed(futures):
-                data_sum, data_sq_sum, count = future.result()
-                total_sum += data_sum
-                total_sq_sum += data_sq_sum
-                total_count += count
+    global_sum = defaultdict(float)
+    global_sumsq = defaultdict(float)
+    global_count = defaultdict(int)
+
+    max_workers = 24
+    print(f"⚙️ Using {max_workers} workers; 1 cube per task")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_cube_mean_std, p): p for p in cube_paths}
+
+        with tqdm(total=len(cube_paths), desc="Processing cubes (1 per process)") as pbar:
+            for fut in as_completed(futures):
+                cube_path = futures[fut]
+                try:
+                    local = fut.result()
+                except Exception as e:
+                    print(f"❌ Failed cube {os.path.basename(cube_path)}: {e}")
+                    pbar.update(1)
+                    continue
+
+                for band, (s, ss, n) in local.items():
+                    global_sum[band] += s
+                    global_sumsq[band] += ss
+                    global_count[band] += n
+
                 pbar.update(1)
 
-    # Skip if no data is collected for the variable
-    if total_count == 0:
-        print(f"No data found for variable {var}. Skipping.")
-        continue
+    # ------------------------------------------------------------------
+    # Final mean & std
+    # ------------------------------------------------------------------
+    all_mean_std = {}
+    for band in global_count.keys():
+        n = global_count[band]
+        if n == 0:
+            continue
 
-    # Compute mean and standard deviation
-    try:
-        print("Computing mean and standard deviation...")
-        mean, std_dev = compute_mean_std(total_sum, total_sq_sum, total_count)
-        stats_results[var] = {"mean": mean, "std_dev": std_dev}
-        print(f"{var} mean: {mean}, std_dev: {std_dev}")
+        mean = global_sum[band] / n
+        var = global_sumsq[band] / n - mean ** 2
+        std = float(np.sqrt(max(var, 0.0)))  # numerical safety
 
-        # Save progress after each variable
-        print(f"Saving progress to {output_path}")
-        with open(output_path, "wb") as f:
-            pickle.dump(stats_results, f)
+        all_mean_std[band] = [float(mean), std]
 
-    except Exception as e:
-        print(f"Failed to process variable {var}: {e}")
+    with open(output_path, "wb") as f:
+        pickle.dump(all_mean_std, f)
 
-print(f"Mean and standard deviation saved to: {output_path}")
+    print(f"✅ Created {output_path} with {len(all_mean_std)} variables")
