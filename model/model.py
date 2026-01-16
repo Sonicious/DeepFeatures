@@ -32,7 +32,7 @@ class ModalityEncoder(nn.Module):
             d_model / 16))  # in_channels=149, reduction_ratio=8)
 
         if in_channels == 221: self.dim_reducer = MultiScaleDimensionalityReducer_221()
-        elif in_channels == 149: self.dim_reducer = MultiScaleDimensionalityReducer_149(out_channels=int(d_model / 16))#in_channels=149, reduction_ratio=8)
+        elif in_channels == 147: self.dim_reducer = MultiScaleDimensionalityReducer_149(out_channels=int(d_model / 16))#in_channels=149, reduction_ratio=8)
         elif in_channels == 12: self.dim_reducer = MultiScaleDimensionalityReducer_12(in_channels=12, out_channels=int(d_model / 16))#in_channels=149, reduction_ratio=8)
 
         # shared positional embedding (can be None for ablation)
@@ -83,7 +83,7 @@ class ModalityDecoder(nn.Module):
 
         if out_channels == 221:
             self.upscaler = MultiScaleAttentionUpscaler_221()
-        elif out_channels == 149:
+        elif out_channels == 147:
             self.upscaler = MultiScaleAttentionUpscaler_149(in_channels=int(d_model / 16))#in_channels=8, out_channels=149)
         elif out_channels == 12:
             self.upscaler = MultiScaleAttentionUpscaler_12(out_channels=out_channels, in_channels=int(d_model / 16))#in_channels=8, out_channels=149)
@@ -120,7 +120,7 @@ class ModalityDecoder(nn.Module):
         x = x + pos_emb
         x = self.transformer_dec(x)
         x = x.reshape(x.size(0) * self.frames, self.d_model // 16, 4, 4)
-        x = self.upscaler(x)  # Shape: (batch_size, frames, 15, 15, 209)
+        x = self.upscaler(x)
         return x
 
 
@@ -155,18 +155,19 @@ class TransformerAE(pl.LightningModule):
         self.learning_rate = learning_rate
         self.loss_fn = loss_fn if loss_fn is not None else WeightedMaskedLoss()
 
-        num_dims = 12
+        num_dims = 147
 
         if num_dims == 221:
-            d_model = 64
+            self.d_model = 64
             dim_feedforward = 2
             channels=221
-        elif num_dims == 149:
-            d_model = 64 * 4
+        elif num_dims == 147:
+            self.d_model = 64 * 4
             dim_feedforward = 2
-            channels = int(self.d_model / 16)
+            #channels = int(self.d_model / 16)
+            channels =147
         elif num_dims == 12:
-            d_model = 64 * 4
+            self.d_model = 64 * 4
             dim_feedforward = 8
             channels = 12
 
@@ -178,7 +179,7 @@ class TransformerAE(pl.LightningModule):
 
         self.transformer_shared = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                d_model=d_model,
+                d_model=self.d_model,
                 nhead=8,
                 dim_feedforward=dim_feedforward,
                 dropout=0.25,
@@ -194,7 +195,7 @@ class TransformerAE(pl.LightningModule):
             positional_embedding=self.positional_embedding_shared,
             transformer_emc=self.transformer_shared,
             frames=frames,
-            d_model=d_model,
+            d_model=self.d_model,
             num_reduced_tokens=num_reduced_tokens
 
         )
@@ -205,9 +206,11 @@ class TransformerAE(pl.LightningModule):
             frames=frames,
             positional_embedding=self.positional_embedding_shared,
             transformer_dec=self.transformer_shared,
-            d_model=d_model,
+            d_model=self.d_model,
             num_reduced_tokens=num_reduced_tokens
         )
+
+        #self.latent_norm = nn.LayerNorm(dbottleneck) #new
 
     def forward(self, x: torch.Tensor, time_gaps: torch.Tensor):
         """
@@ -215,6 +218,8 @@ class TransformerAE(pl.LightningModule):
         time_gaps: (B, T-1)
         """
         z = self.encoder(x, time_gaps)              # (B, dbottleneck)
+        #z = self.latent_norm(z)  # per-sample normalization (new)
+        #z = F.normalize(z, dim=1)
         decoded = self.decoder(z, time_gaps)        # (B, T, 12, 15, 15)
         return decoded, z
 
@@ -289,6 +294,7 @@ class TransformerAE(pl.LightningModule):
 
         warmup_scheduler = {
             "scheduler": LinearLR(optimizer, start_factor=0.001, total_iters=30000),
+            #"scheduler": LinearLR(optimizer, start_factor=0.0005, total_iters=45000), #new
             "interval": "step",
             "frequency": 1,
         }
