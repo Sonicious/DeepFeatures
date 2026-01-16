@@ -17,7 +17,7 @@ from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 CUBE_IDS = ['017', '039']
 BATCH_SIZE = 200
-BASE_PATH = '/net/data/deepfeatures/sciencecubes'
+BASE_PATH = '/net/data/deepfeatures/science/0.1.0'
 
 def create_empty_dataset(feature_names, xs, ys, out_path, times=None, dtype=np.float32):
     """
@@ -375,11 +375,11 @@ class XrFeatureDataset:
 
 
 #s1_d2_ckpt = '../checkpoints/003_025_072_test/s1_s2_3/ae-9-epoch=93-val_loss=2.035e-03.ckpt'
-checkpoint_path = "../checkpoints/ae-7-epoch=106-val_loss=4.960e-03.ckpt"
+checkpoint_path = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"
 device = torch.device("cuda:3")
 
 #model = TransformerAE(dbottleneck=7, channels=149, num_reduced_tokens=5).eval()
-model = TransformerAE(dbottleneck=7).eval()
+model = TransformerAE(dbottleneck=6).eval()
 
 
 checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -414,7 +414,7 @@ for cube_num in cube_nums:
     da = da.chunk({"time": 1, "y": 1000, "x": 1000})
     da = prepare_spectral_data(da, to_ds=False, compute_SI=True, load_b01b09=True)
 
-    feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07']
+    feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06']
 
 
     init_path = f"{BASE_PATH}/{cube_num}.zarr"
