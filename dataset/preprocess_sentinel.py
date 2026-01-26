@@ -1,3 +1,4 @@
+import time
 import torch
 import numpy as np
 import xarray as xr
@@ -76,11 +77,13 @@ def extract_sentinel2_patches(
     time_win: int = 20,
     h_win: int = 15,
     w_win: int = 15,
-    time_stride: int = 17,
-    h_stride: int = 9,
-    w_stride: int = 9,
+    time_stride: int = 20,
+    h_stride: int = 15,
+    w_stride: int = 15,
     select_t: int = 11,
-    layout: str = 'BTYX' # TBYX
+    layout: str = 'BTYX', # TBYX
+    max_total_gap = 185,
+    inference: bool = False
 ) -> Tuple[torch.Tensor, Dict[str, np.ndarray], torch.Tensor, bool]:
     """
     Extract spatiotemporal patches from Sentinel-2 array using torch,
@@ -105,6 +108,7 @@ def extract_sentinel2_patches(
     """
     assert select_t <= time_win, "Cannot select more timestamps than available."
 
+    time_start_patch = time.time()
     print("🔧 Converting input array to torch tensor...")
     tensor = torch.from_numpy(s2_array).unsqueeze(0)  # (1, bands, T, H, W)
     if layout == 'BTYX': bands, T, H, W = s2_array.shape
@@ -130,31 +134,34 @@ def extract_sentinel2_patches(
     patches = patches.reshape(-1, bands, time_win, h_win, w_win)  # (N, bands, time, h, w)
 
     N = patches.shape[0]
-    print(f"🧩 Total patches extracted: {N}")
+    print(f"🧩 Total patches extracted: {N} ({time.time()-time_start_patch:.3f}s)")
     # Randomly select select_t of time_win timesteps per patch
+    time_rand_sel = time.time()
+    # --- Always build random_idx (identity if select_t == time_win) ---
+    if select_t == time_win:
+        random_idx = np.tile(np.arange(time_win), (N, 1))
+    else:
+        random_idx = np.array([
+            np.sort(np.random.choice(time_win, select_t, replace=False))
+            for _ in range(N)
+        ])
 
-
-    print(f"🎲 Selecting {select_t} random timesteps from each 10-frame patch...")
-    #random_idx = np.array([np.random.choice(time_win, select_t, replace=False) for _ in range(N)])
-    random_idx = np.array([
-        np.sort(np.random.choice(time_win, select_t, replace=False))
-        for _ in range(N)
-    ])
-    random_idx_torch = torch.tensor(random_idx, dtype=torch.long)
-
-    # Select corresponding temporal slices using advanced indexing
+    random_idx_torch = torch.from_numpy(random_idx).long()
     idx_batch = torch.arange(N).unsqueeze(1)  # (N, 1)
+
+    # --- ALWAYS take the same code path ---
     selected_patches = patches[idx_batch, :, random_idx_torch]  # (N, bands, select_t, h, w)
 
 
     # === Compute valid mask: True if NOT NaN ===
-    print(f"✅ Patch shape after random selection: {selected_patches.shape}")
+    print(f"✅ Patch shape after random selection: {selected_patches.shape} ({time.time()-time_rand_sel:.3f}s)")
+    time_val = time.time()
     valid_mask = ~torch.isnan(selected_patches)  # shape: (N, bands, select_t, h, w)
-    print("🧼 Validity mask computed.")
+    print(f"🧼 Validity mask computed ({time.time()-time_val:.3f}s).")
 
     # === Filter out low-quality patches BEFORE filling ===
     print("🔍 Filtering out low-quality patches...")
-
+    time_low = time.time()
     h_center = valid_mask.shape[3] // 2
     w_center = valid_mask.shape[4] // 2
     t_center = valid_mask.shape[1] // 2
@@ -165,10 +172,11 @@ def extract_sentinel2_patches(
     selected_patches = selected_patches[valid_patch_mask]
     valid_mask = valid_mask[valid_patch_mask]
     random_idx = random_idx[valid_patch_mask.cpu().numpy()]
-    print(f"🧹 Removed {(~valid_patch_mask).sum().item()} invalid patches.")
+    print(f"🧹 Removed {(~valid_patch_mask).sum().item()} invalid patches ({time.time()-time_low:.3f}s).")
     print(f"✅ Remaining patches: {selected_patches.shape[0]}")
 
     # === Fill NaNs only if needed ===
+    time_fill = time.time()
     if not valid_mask.all():
         print("🧪 NaNs detected – filling missing values with sample mean per patch and band...")
         sum_valid = torch.nan_to_num(selected_patches, nan=0.0, posinf=0.0, neginf=0.0).sum(dim=(1, 3, 4), keepdim=True)
@@ -176,12 +184,13 @@ def extract_sentinel2_patches(
         mean_per_patch_band = sum_valid / count_valid  # (N, 1, bands, 1, 1)
         # Fill NaNs in-place without cloning
         selected_patches = torch.where(valid_mask, selected_patches, mean_per_patch_band)
-        print("✅ NaNs filled with patch-band means.")
+        print(f"✅ NaNs filled with patch-band means ({time.time()-time_fill:.3f}s).")
     else:
         print("✅ No NaNs found – skipping filling.")
 
     # === Compute corresponding coordinates ===
     print("🧭 Computing coordinate ranges for all patches...")
+    time_range = time.time()
     # Get full 3D index grid (Nt, Ny, Nx)
     t_idx, y_idx, x_idx = np.meshgrid(
         np.arange(Nt), np.arange(Ny), np.arange(Nx), indexing='ij'
@@ -205,25 +214,32 @@ def extract_sentinel2_patches(
         "y": y_ranges,                 # (N, h_win)
         "x": x_ranges                 # (N, w_win)
     }
-
+    print(f"✅ Coordinate ranges computed after {time.time()-time_range:.3f}s.")
     time_gaps = compute_time_gaps(selected_time_coords)  # (N, 10)
     #time_gaps = torch.where(time_gaps > 2, torch.tensor(2, dtype=time_gaps.dtype), time_gaps)
 
     #assert time_gaps.ndim == 2 and time_gaps.shape[1] == 10, f"{time_gaps.shape=}"
-    gap_mask = (time_gaps.sum(dim=1) < 200)  # (N,)
+    gap_mask = (time_gaps.sum(dim=1) < max_total_gap)  # (N,)
+    if inference:
 
+        bad_mask = ~gap_mask
+        if bad_mask.any():
+            time_gaps[bad_mask] = torch.ones_like(time_gaps[bad_mask])
+        keep_mask = torch.ones_like(gap_mask, dtype=torch.bool)  # keep all
 
-    removed = (~gap_mask).sum().item()
-    if removed:
-        print(f"⏱️ Removing {removed} samples with total gaps > 180")
-        rm_unvalid = True
+    else:
+        keep_mask = gap_mask
+        removed = (~gap_mask).sum().item()
+        if removed:
+            print(f"⏱️ Removing {removed} samples with total gaps > 180")
+            rm_unvalid = True
 
-    # apply mask to tensors
-    selected_patches = selected_patches[gap_mask]
-    valid_mask = valid_mask[gap_mask]
+        # apply mask to tensors
+        selected_patches = selected_patches[keep_mask]
+        valid_mask = valid_mask[keep_mask]
 
     # apply mask to numpy arrays
-    idx_np = gap_mask.cpu().numpy()
+    idx_np = keep_mask.cpu().numpy()
     coords = {
         "time": coords["time"][idx_np],
         "y": coords["y"][idx_np],
@@ -232,7 +248,4 @@ def extract_sentinel2_patches(
 
     print("🚀 Extraction complete.")
     return selected_patches, coords, valid_mask, rm_unvalid
-
-
-
 
