@@ -6,6 +6,7 @@ import pathlib
 import warnings
 import numpy as np
 import xarray as xr
+from bokeh.core.property.struct import Optional
 from tqdm import tqdm
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -15,9 +16,138 @@ from dataset.prepare_dataarray import prepare_spectral_data
 from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
-CUBE_IDS = ['017', '039']
-BATCH_SIZE = 200
+CUBE_ID = '004'
+BATCH_SIZE = 550
 BASE_PATH = '/net/data/deepfeatures/science/0.1.0'
+OUTPUT_PATH = '/net/data/deepfeatures/feature'
+
+from multiprocessing import Pool
+
+
+# --- top-level worker (must be top-level for multiprocessing pickling) ---
+def _extract_worker(args):
+    (data_sub, time_sub, y_sub, x_sub,
+     y_keep_min, y_keep_max,
+     extractor_kwargs) = args
+
+    try:
+        interior = data_sub[:, 5:-5, 7:-7, 7:-7]
+    except IndexError:
+        # too small to ever form a valid patch
+        return None
+
+    if not np.any(~np.isnan(interior)):
+        # no valid data → no possible patches
+        return None
+
+    patches, coords, valid_mask, not_val = extract_sentinel2_patches(
+        data_sub,
+        time_sub,
+        y_sub,
+        x_sub,
+        **extractor_kwargs
+    )
+
+    if patches is None or getattr(patches, "shape", (0,))[0] == 0:
+        return None
+
+    coords_f = dict(coords)
+
+    return patches, coords_f, valid_mask, not_val
+
+
+def extract_sentinel2_patches_pool(
+    data,
+    time_coords,
+    y_coords,
+    x_coords,
+    *,
+    processes: int = 4,
+    halo: int = 14,
+    **kwargs
+):
+    """
+    Drop-in replacement wrapper for extract_sentinel2_patches that runs preprocessing
+    in parallel using multiprocessing.Pool (default 4 processes) by splitting along Y.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Array shaped (C, T, Y, X) as you pass into extract_sentinel2_patches today.
+        (If you pass other layouts, adapt the Y axis below.)
+    time_coords, y_coords, x_coords : np.ndarray
+        1D coordinate arrays for the chunk.
+    processes : int
+        Number of worker processes (default 4).
+    pool : multiprocessing.Pool or None
+        If None, a temporary pool is created and closed inside this function.
+        If provided, it will be used (recommended: create it once globally).
+    halo : int
+        Extra pixels on each stripe boundary to keep patch windows valid.
+        For 15x15 patches, 14 is safe (avoids boundary misses with sliding).
+    **kwargs :
+        Forwarded to extract_sentinel2_patches (time_win, strides, max_total_gap, inference, ...)
+
+    Returns
+    -------
+    patches_all : torch.Tensor
+    coords_all : dict
+    valid_mask_all : torch.Tensor
+    not_val : bool
+    """
+
+    # Expecting (C, T, Y, X)
+    Yfull = data.shape[2]
+    if Yfull == 0:
+        return torch.empty((0,)), {}, torch.empty((0,)), True
+
+    # build 4 stripes (or `processes`) along Y
+    edges = np.linspace(0, Yfull, processes + 1, dtype=int)
+
+    extractor_kwargs = dict(kwargs)
+
+    jobs = []
+    for i in range(processes):
+        y0 = int(edges[i])
+        y1 = min(Yfull, int(edges[i + 1]) + halo)
+
+        data_sub = data[:, :, y0:y1, :]
+        y_sub = y_coords[y0:y1]
+
+        # keep-only interior by coordinate value to prevent duplicates
+        y_keep_min = float(y_coords[y0])
+        # make upper bound exclusive; if y1 exists use it, otherwise one step above last
+        y_keep_max = float(y_coords[y1-1])
+
+        jobs.append((data_sub, time_coords, y_sub, x_coords, y_keep_min, y_keep_max, extractor_kwargs))
+
+    if len(jobs) == 0:
+        return torch.empty((0,)), {}, torch.empty((0,)), True
+
+
+    with Pool(processes=processes) as pool:
+        results = pool.map(_extract_worker, jobs)
+
+    results = [r for r in results if r is not None]
+    if len(results) == 0:
+        return torch.empty((0,)), {}, torch.empty((0,)), True
+
+    patches_list, coords_list, masks_list, not_vals = zip(*results)
+
+
+    patches_all = torch.cat(patches_list, dim=0)
+    valid_mask_all = torch.cat(masks_list, dim=0)
+    not_val = all(not_vals)
+
+    # merge coords: concatenate 1D per-patch arrays, keep non per-patch arrays as-is
+    coords_all = {
+        "time": np.concatenate([c["time"] for c in coords_list], axis=0),
+        "y": np.concatenate([c["y"] for c in coords_list], axis=0),
+        "x": np.concatenate([c["x"] for c in coords_list], axis=0),
+    }
+
+    return patches_all, coords_all, valid_mask_all, not_val
+
 
 def create_empty_dataset(feature_names, xs, ys, out_path, times=None, dtype=np.float32):
     """
@@ -204,7 +334,6 @@ class XrFeatureDataset:
 
         self.chunks_bounds = self.compute_bounds(time_slide = True, time_block=self.time_block_size, space_block=self.space_block_size)  # list of (t0,t1,y0,y1,x0,x1)
         print(f'Chunks to process: {len(self.chunks_bounds)}')
-        #self.chunk_idx = 415
         self.chunk_idx = 0
 
         # fast membership test on ns-int
@@ -325,15 +454,6 @@ class XrFeatureDataset:
             x=slice(x0, x1),
         )
 
-        data = chunk.values
-
-
-        valid_pixel_mask  = np.isnan(data[:12, 5, 7:-7, 7:-7])#.any(axis=0)
-        nan_count = valid_pixel_mask.sum()
-        non_nan_count = (~valid_pixel_mask).sum()
-
-        print(f"Chunk NaNs: {nan_count:,}, Non-NaNs: {non_nan_count:,}")
-        print(f'Chunk shape: {data.shape}')
         coords = {k: chunk.coords[k].values for k in chunk.coords}
 
         ct_idx = coords["time"].size // 2
@@ -347,38 +467,55 @@ class XrFeatureDataset:
             print(f'Setting flag save frame to {self.save_frame}')
             return None, None, None, None
 
+        start_chunk_values = time.time()
+        data = chunk.values
+        print(f"Chunk values computed in {time.time() - start_chunk_values:.3f} seconds")
+        valid_pixel_mask  = np.isnan(data[:12, 5:-5, 7:-7, 7:-7])#.any(axis=0)
+        non_nan_count = (~valid_pixel_mask).sum()
         if non_nan_count == 0:
 
             return None, None, None, None
 
+        nan_count = valid_pixel_mask.sum()
+
+
+        print(f"Chunk NaNs: {nan_count:,}, Non-NaNs: {non_nan_count:,}")
+        print(f'Chunk shape: {data.shape}')
+
+
+
 
         print(f'Splitting chunk {self.chunk_idx}')
-        patches_all, coords_all, valid_mask_all, not_val = extract_sentinel2_patches(
-            data,  # dask array; extractor should handle array-like or call np.asarray internally
-            coords['time'],  # small vector -> fine to realize
-            coords['y'],  # numpy or small vector
-            coords['x'],
+        start_chunk_split = time.time()
+
+        patches_all, coords_all, valid_mask_all, not_val = extract_sentinel2_patches_pool(
+            data,
+            coords["time"],
+            coords["y"],
+            coords["x"],
+            processes=6,
             time_win=11,
             time_stride=1,
             h_stride=1,
-            w_stride=1
+            w_stride=1,
+            max_total_gap=195,
+            inference=True,
         )
 
-        if patches_all.shape[0] == 0 and not_val: self.save_frame = False
+        print(f"Patches preprocessed in {time.time() - start_chunk_split:.3f} seconds")
+
+        #if patches_all.shape[0] == 0 and not_val: self.save_frame = False
 
         if patches_all.shape[0] == 0: return None, None, None, None
 
 
         time_gaps_s2 = compute_time_gaps(coords_all['time'])
-
         return patches_all, coords_all, valid_mask_all, time_gaps_s2
 
 
-#s1_d2_ckpt = '../checkpoints/003_025_072_test/s1_s2_3/ae-9-epoch=93-val_loss=2.035e-03.ckpt'
 checkpoint_path = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"
-device = torch.device("cuda:3")
+device = torch.device("cuda:2")
 
-#model = TransformerAE(dbottleneck=7, channels=149, num_reduced_tokens=5).eval()
 model = TransformerAE(dbottleneck=6).eval()
 
 
@@ -388,131 +525,143 @@ model.to(device)
 model.eval()
 
 
-
-
 batch_size = BATCH_SIZE
+cube_num = CUBE_ID
+eps = 1e-6  # avoid div by zero
 
-cube_nums = CUBE_IDS
+print(f'processing cube {cube_num}')
+ds = xr.open_zarr(f'{BASE_PATH}/{cube_num}.zarr')
 
-for cube_num in cube_nums:
+da = ds.s2l2a.where((ds.cloud_mask == 0))
+n_total = da.sizes["band"] * da.sizes["y"] * da.sizes["x"]
+threshold = int(n_total * 0.0)
+# Count non-NaN points per time step
+valid_data_count = da.notnull().sum(dim=["band", "y", "x"])
+# Keep only time steps with at least 3.5% valid data
+da = da.sel(time=valid_data_count > threshold)
 
-    eps = 1e-6  # avoid div by zero
+#if chunks is None: chunks = {"time": 1, "y": 1000, "x": 1000}
+da = da.chunk({"time": 1, "y": 1000, "x": 1000})
+da = prepare_spectral_data(da, to_ds=False, compute_SI=True, load_b01b09=True)
 
-    print(f'processing cube {cube_num}')
-
-    ds = xr.open_zarr(f'{BASE_PATH}/{cube_num}.zarr')
-
-    da = ds.s2l2a.where((ds.cloud_mask == 0))
-    n_total = da.sizes["band"] * da.sizes["y"] * da.sizes["x"]
-    threshold = int(n_total * 0.0)
-    # Count non-NaN points per time step
-    valid_data_count = da.notnull().sum(dim=["band", "y", "x"])
-    # Keep only time steps with at least 3.5% valid data
-    da = da.sel(time=valid_data_count > threshold)
-
-    #if chunks is None: chunks = {"time": 1, "y": 1000, "x": 1000}
-    da = da.chunk({"time": 1, "y": 1000, "x": 1000})
-    da = prepare_spectral_data(da, to_ds=False, compute_SI=True, load_b01b09=True)
-
-    feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06']
+feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06']
 
 
-    init_path = f"{BASE_PATH}/{cube_num}.zarr"
-    output_path = f"{BASE_PATH}/feature_{cube_num}.zarr"
-    ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(da, feature_names, output_path)
-    print(times_ok_ns)
+init_path = f"{BASE_PATH}/{cube_num}.zarr"
+output_path = f"{OUTPUT_PATH}/{cube_num}.zarr"
+ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(da, feature_names, output_path)
+print(times_ok_ns)
 
-    print(f'creating feature_{cube_num}.zarr')
-
-
-    x_to_idx = {float(v): i for i, v in enumerate(global_xs)} #['2016-12-27T10:54:42.026000000'
-    y_to_idx = {float(v): i for i, v in enumerate(global_ys)}
+print(f'creating feature_{cube_num}.zarr')
 
 
-    C, Y, X = len(feature_names), len(global_ys), len(global_xs)
-    current_canvas = np.full((C, Y, X), np.nan, dtype=np.float32)
-    filled_once = np.zeros((Y, X), dtype=bool)  # first-write-wins for overlaps
-    current_time = None
-
-    dataset = XrFeatureDataset(
-        data_cube=da,
-        times_ok_ns = times_ok_ns
-    )
-
-    for chunk_idx, chunk in enumerate(dataset):
-        mae_sum = 0.0
-        mape_sum = 0.0
-        count = 0
-        start_time = time.time()
-        processed_data, coords, valid_mask, time_gaps_s2, = chunk
-        if processed_data is None: N = 0
-        else:
-            N = processed_data.shape[0]
-
-            center_time, center_xs, center_ys = extract_center_coordinates(coords)
-            if current_time is None:
-                current_time = center_time
+x_to_idx = {float(v): i for i, v in enumerate(global_xs)} #['2016-12-27T10:54:42.026000000'
+y_to_idx = {float(v): i for i, v in enumerate(global_ys)}
 
 
-        for start in tqdm(range(0, N, batch_size), desc="Reconstructing", unit="batch"):
-            end = min(start + batch_size, N)
+C, Y, X = len(feature_names), len(global_ys), len(global_xs)
+current_canvas = np.full((C, Y, X), np.nan, dtype=np.float32)
+filled_once = np.zeros((Y, X), dtype=bool)  # first-write-wins for overlaps
+current_time = None
 
-            # slice + move to device
-            batch_processed = processed_data[start:end].to(device, dtype=torch.float32)
-            batch_mask = valid_mask[start:end].to(device, dtype=torch.bool)
-            batch_s2 = time_gaps_s2[start:end].to(device, dtype=torch.int32)
+
+dataset = XrFeatureDataset(
+    data_cube=da,
+    times_ok_ns = times_ok_ns,
+)
+
+chunk_processed_time = time.time()
+
+for chunk_idx, chunk in enumerate(dataset):
+    mae_sum = 0.0
+    mape_sum = 0.0
+    count = 0
+    start_time = time.time()
+    print(f'Chunk {chunk_idx} received in {start_time-chunk_processed_time:.2f} seconds')
+    processed_data, coords, valid_mask, time_gaps_s2, = chunk
+
+    if processed_data is None: N = 0
+    else:
+        N = processed_data.shape[0]
+
+        center_time, center_xs, center_ys = extract_center_coordinates(coords)
+        if current_time is None:
+            current_time = center_time
+
+
+    for start in tqdm(range(0, N, batch_size), desc="Reconstructing", unit="batch"):
+        end = min(start + batch_size, N)
+
+        # slice + move to device
+        batch_processed = processed_data[start:end].to(device, dtype=torch.float32)
+        batch_mask = valid_mask[start:end].to(device, dtype=torch.bool)
+        batch_s2 = time_gaps_s2[start:end].to(device, dtype=torch.int32)
+        #y_all, zf = model(batch_processed, batch_s2)
+        try:
             y_all, zf = model(batch_processed, batch_s2)
+        except Exception as e:
+            print(str(e))
+            print(batch_s2.shape)
+            print(batch_processed.shape)
 
-            # --- central coordinate ---
-            B, T, C, H, W = batch_processed.shape
-            ct, cx, cy = T // 2, H // 2, W // 2
+        # --- central coordinate ---
+        B, T, C, H, W = batch_processed.shape
+        ct, cx, cy = T // 2, H // 2, W // 2
 
-            central_in = batch_processed[:, ct, :, cx, cy]  # [B, C]
-            central_out = y_all[:, ct, :, cx, cy]  # [B, C]
-            central_mask = batch_mask[:, ct, :, cx, cy]  # [B, C] (bool)
+        central_in = batch_processed[:, ct, :, cx, cy]  # [B, C]
+        central_out = y_all[:, ct, :, cx, cy]  # [B, C]
+        central_mask = batch_mask[:, ct, :, cx, cy]  # [B, C] (bool)
 
-            # ---- write predictions to ds_pred at correct (band,time,y,x) ----
-            # center_xs/center_ys are aligned to patches globally; take the batch slice
-            bx = center_xs[start:end]  # length B
-            by = center_ys[start:end]  # length B
+        # ---- write predictions to ds_pred at correct (band,time,y,x) ----
+        # center_xs/center_ys are aligned to patches globally; take the batch slice
+        bx = center_xs[start:end]  # length B
+        by = center_ys[start:end]  # length B
 
-            x_idx = coord_to_idx(bx, x_to_idx, global_xs)
-            y_idx = coord_to_idx(by, y_to_idx, global_ys)
+        x_idx = coord_to_idx(bx, x_to_idx, global_xs)
+        y_idx = coord_to_idx(by, y_to_idx, global_ys)
 
-            # then vectorized write
-            current_canvas[:, y_idx, x_idx] = zf.detach().cpu().numpy().astype(np.float32).T
-            filled_once[y_idx, x_idx] = True
+        # then vectorized write
+        current_canvas[:, y_idx, x_idx] = zf.detach().cpu().numpy().astype(np.float32).T
+        filled_once[y_idx, x_idx] = True
 
-            # move predicted central values to CPU/np
-            central_out_np = central_out.detach().cpu().numpy().astype(np.float32)
-            central_in_np = central_in.detach().cpu().numpy().astype(np.float32)
+        # move predicted central values to CPU/np
+        central_out_np = central_out.detach().cpu().numpy().astype(np.float32)
+        central_in_np = central_in.detach().cpu().numpy().astype(np.float32)
 
-            # filter only valid entries
-            valid_in = central_in[central_mask]
-            valid_out = central_out[central_mask]
+        # filter only valid entries
+        valid_in = central_in[central_mask]
+        valid_out = central_out[central_mask]
 
-            diff = (valid_out - valid_in).abs()
-            mae_sum += diff.sum().item()
-            mape_sum += (diff / valid_in.abs().clamp_min(eps)).sum().item()
-            count += valid_mask[:, ct, :, cx, cy].sum().item()
-        print(f'Chunk {dataset.chunk_idx} ({cube_num}) processed in {time.time() - start_time:.3f} s')
+        diff = (valid_out - valid_in).abs()
+        mae_sum += diff.sum().item()
+        mape_sum += (diff / valid_in.abs().clamp_min(eps)).sum().item()
+        count += valid_mask[:, ct, :, cx, cy].sum().item()
+    chunk_processed_time = time.time()
+    print(f'Chunk {dataset.chunk_idx} ({cube_num}) processed in {chunk_processed_time - start_time:.3f} s')
 
-        # global center metrics
-        chunk_mae = mae_sum / max(count, 1)
-        chunk_mape = 100.0 * mape_sum / max(count, 1)
+    start_global_metrics = time.time()
+    # global center metrics
+    chunk_mae = mae_sum / max(count, 1)
+    chunk_mape = 100.0 * mape_sum / max(count, 1)
 
-        # Your rule: after every 16 chunks, flush the frame
-        if (dataset.chunk_idx + 1) % 16 == 0:
-            if dataset.save_frame:
-                saved = flush_frame(canvas=current_canvas, f_ds=ds0, out_path=output_path, time=current_time)
-                print(f"🗂️ Frame {np.datetime_as_string(current_time, unit='D')} "
-                      f"{'saved' if saved else 'skipped (<5% coverage)'}.")
-                reset_frame()
-            else: dataset.save_frame = True
+    # Your rule: after every 16 chunks, flush the frame
+    if (dataset.chunk_idx + 1) % 16 == 0:
+        start_flash = time.time()
 
-        dataset.chunk_idx += 1
-        print(f"\n✅ Central-pixel Chunk MAE:  {chunk_mae:.6f}")
-        print(f"✅ Central-pixel Chunk MAPE: {chunk_mape:.4f}%")
+        if dataset.save_frame:
+            saved = flush_frame(canvas=current_canvas, f_ds=ds0, out_path=output_path, time=current_time)
+            print(f"🗂️ Frame {np.datetime_as_string(current_time, unit='D')} "
+                  f"{'saved' if saved else 'skipped (<5% coverage)'}.")
+            reset_frame()
+        else: dataset.save_frame = True
+        print(f'Flash frame in {time.time() - start_flash:.3f} seconds')
+
+    dataset.chunk_idx += 1
+    print(f"✅ Central-pixel Chunk MAE:  {chunk_mae:.6f}")
+    print(f"✅ Central-pixel Chunk MAPE: {chunk_mape:.4f}%")
+    print(f"✅ Global metrics computed in {time.time() - start_global_metrics:.3f} seconds")
+
+    print(f"✅ Iteration ended in {time.time() - start_time:.3f} seconds\n")
 
 
 
