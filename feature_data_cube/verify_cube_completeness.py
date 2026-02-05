@@ -2,13 +2,10 @@ import numpy as np
 import xarray as xr
 
 # Path to Zarr cube
-zarr_path = '/net/data_ssd/deepfeatures/sciencecubes_processed/000000_feature_cube.zarr'
-#zarr_path = '/net/data_ssd/deepfeatures/sciencecubes_processed/000000.zarr'
-
+zarr_path = '/net/data/deepfeatures/feature/004.zarr'
 
 ## Open the dataset
 ds_reloaded = xr.open_zarr(zarr_path, chunks=None)
-ds_reloaded = ds_reloaded.isel(time=slice(0, 86))
 
 # Assign names to the 'feature' dimension
 ds_reloaded = ds_reloaded.assign_coords(feature=[f"feature_{i}" for i in range(ds_reloaded.dims['feature'])])
@@ -43,4 +40,4 @@ total_nan_count = xr.where(data.isnull(), 1, 0).sum(dim=['x', 'y', 'time']).comp
 available_percentage = 100 - (total_nan_count / total_elements * 100)
 
 print(f"\nOverall available data (non-NaN): {available_percentage:.2f}%")
-print(f"\nOverall available data (non-NaN): {total_elements}")
+#print(f"\nOverall available data (non-NaN): {total_elements}")
