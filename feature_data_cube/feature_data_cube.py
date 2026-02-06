@@ -16,10 +16,14 @@ from dataset.prepare_dataarray import prepare_spectral_data
 from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
+CUDA_DEVICE = "cuda:2"
 CUBE_ID = '004'
 BATCH_SIZE = 550
 BASE_PATH = '/net/data/deepfeatures/science/0.1.0'
 OUTPUT_PATH = '/net/data/deepfeatures/feature'
+CHECKPOINT_PATH = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"
+PROCESSES = 6
+
 
 from multiprocessing import Pool
 
@@ -31,7 +35,7 @@ def _extract_worker(args):
      extractor_kwargs) = args
 
     try:
-        interior = data_sub[:, 5:-5, 7:-7, 7:-7]
+        interior = data_sub[:, 5, 7:-7, 7:-7]
     except IndexError:
         # too small to ever form a valid patch
         return None
@@ -470,7 +474,7 @@ class XrFeatureDataset:
         start_chunk_values = time.time()
         data = chunk.values
         print(f"Chunk values computed in {time.time() - start_chunk_values:.3f} seconds")
-        valid_pixel_mask  = np.isnan(data[:12, 5:-5, 7:-7, 7:-7])#.any(axis=0)
+        valid_pixel_mask  = np.isnan(data[:12, 5, 7:-7, 7:-7])#.any(axis=0)
         non_nan_count = (~valid_pixel_mask).sum()
         if non_nan_count == 0:
 
@@ -493,7 +497,7 @@ class XrFeatureDataset:
             coords["time"],
             coords["y"],
             coords["x"],
-            processes=6,
+            processes=PROCESSES,
             time_win=11,
             time_stride=1,
             h_stride=1,
@@ -512,14 +516,12 @@ class XrFeatureDataset:
         time_gaps_s2 = compute_time_gaps(coords_all['time'])
         return patches_all, coords_all, valid_mask_all, time_gaps_s2
 
-
-checkpoint_path = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"
-device = torch.device("cuda:2")
+device = torch.device(CUDA_DEVICE)
 
 model = TransformerAE(dbottleneck=6).eval()
 
 
-checkpoint = torch.load(checkpoint_path, map_location=device)
+checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
 model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 model.eval()
