@@ -1,32 +1,79 @@
 import os
 import sys
 import time
+import logging
+import argparse
 import torch
 import pathlib
 import warnings
 import numpy as np
 import xarray as xr
-from bokeh.core.property.struct import Optional
-from tqdm import tqdm
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from tqdm import tqdm
 from utils.utils import compute_time_gaps, extract_center_coordinates
 from model.model import TransformerAE
+from multiprocessing import Pool, Value, Lock
 from dataset.prepare_dataarray import prepare_spectral_data
 from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
-CUDA_DEVICE = "cuda:2"
-CUBE_ID = '004'
-BATCH_SIZE = 550
-BASE_PATH = '/net/data/deepfeatures/science/0.1.0'
-OUTPUT_PATH = '/net/data/deepfeatures/feature'
-CHECKPOINT_PATH = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"
-PROCESSES = 6
+parser = argparse.ArgumentParser(description="Feature data cube extraction")
+parser.add_argument("--cuda-device", default="cuda:3")                                                   # CUDA_DEVICE
+parser.add_argument("--cube-id", default='061')                                                          # CUBE_ID
+parser.add_argument("--batch-size", type=int, default=550)                                               # BATCH_SIZE
+parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                       # BASE_PATH
+parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                           # OUTPUT_PATH
+parser.add_argument("--checkpoint-path", default="../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt")  # CHECKPOINT_PATH
+parser.add_argument("--processes", type=int, default=6)                                                  # PROCESSES
+parser.add_argument("--split-count", type=int, default=2)                                                # SPLIT_COUNT
+parser.add_argument("--split-index", type=int, default=0)                                                # SPLIT_INDEX
+parser.add_argument("--log-level", default="INFO")                                                       # LOG_LEVEL
+args = parser.parse_args()
+
+CUDA_DEVICE = args.cuda_device
+CUBE_ID = args.cube_id
+BATCH_SIZE = args.batch_size
+BASE_PATH = args.base_path
+OUTPUT_PATH = args.output_path
+CHECKPOINT_PATH = args.checkpoint_path
+PROCESSES = args.processes
+SPLIT_COUNT = args.split_count
+SPLIT_INDEX = args.split_index
+LOG_LEVEL = args.log_level
+_log_level_str = str(LOG_LEVEL).upper()
+if _log_level_str in ("DEBUG", "10"):
+    LOG_LEVEL_INT = logging.DEBUG
+elif _log_level_str in ("INFO", "20"):
+    LOG_LEVEL_INT = logging.INFO
 
 
-from multiprocessing import Pool
 
+
+logging.basicConfig(
+    level=LOG_LEVEL_INT,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+logger.setLevel(LOG_LEVEL_INT)
+
+_worker_id = None
+
+
+def _init_worker(counter, lock, log_level_int):
+    global _worker_id
+    with lock:
+        _worker_id = counter.value
+        counter.value += 1
+    # Force worker process logging level/handlers
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    handler = logging.StreamHandler()
+    handler.setLevel(log_level_int)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s"))
+    root_logger.addHandler(handler)
+    root_logger.setLevel(log_level_int)
+    logging.getLogger(logger.name).setLevel(log_level_int)
 
 # --- top-level worker (must be top-level for multiprocessing pickling) ---
 def _extract_worker(args):
@@ -44,12 +91,18 @@ def _extract_worker(args):
         # no valid data → no possible patches
         return None
 
+    worker_logger_name = f"{logger.name}.W{_worker_id}" if _worker_id is not None else logger.name
+    worker_logger = logging.getLogger(worker_logger_name)
+    worker_logger.setLevel(LOG_LEVEL_INT)
+    extractor_kwargs = dict(extractor_kwargs)
+    extractor_kwargs.setdefault("logger_name", worker_logger_name)
+
     patches, coords, valid_mask, not_val = extract_sentinel2_patches(
         data_sub,
         time_sub,
         y_sub,
         x_sub,
-        **extractor_kwargs
+        **extractor_kwargs,
     )
 
     if patches is None or getattr(patches, "shape", (0,))[0] == 0:
@@ -129,7 +182,9 @@ def extract_sentinel2_patches_pool(
         return torch.empty((0,)), {}, torch.empty((0,)), True
 
 
-    with Pool(processes=processes) as pool:
+    counter = Value("i", 0)
+    lock = Lock()
+    with Pool(processes=processes, initializer=_init_worker, initargs=(counter, lock, LOG_LEVEL_INT)) as pool:
         results = pool.map(_extract_worker, jobs)
 
     results = [r for r in results if r is not None]
@@ -265,7 +320,7 @@ def flush_frame(canvas, f_ds, out_path, time):
     t_arr = f_ds.time.values
     idx = int(np.argmin(np.abs(t_arr - t)))
 
-    print(canvas[:, np.newaxis, :, :].shape)
+    logger.info("FLUSH: canvas expanded shape=%s", canvas[:, np.newaxis, :, :].shape)
     # shape (C, Y, X) -> expand to (C, 1, Y, X)
     da = xr.DataArray(
         canvas[:, np.newaxis, :, :],   # add time axis in 2nd position
@@ -318,7 +373,9 @@ class XrFeatureDataset:
             time_block_size: int = 11,
             space_block_size: int = 250,
             time_overlap: int = 10,
-            space_overlap: int = 14
+            space_overlap: int = 14,
+            split_count: int = 1,
+            split_index: int = 0,
     ):
         self.data_cube = data_cube
         self.times_ok_ns = times_ok_ns
@@ -326,19 +383,34 @@ class XrFeatureDataset:
         self.space_block_size = space_block_size
         self.time_overlap = time_overlap
         self.space_overlap = space_overlap
+        self.split_count = max(1, int(split_count))
+        self.split_index = int(split_index)
 
         # infer sizes (dims: band, time, y, x)
         self.time_len = int(data_cube.sizes["time"])
         self.y_len = int(data_cube.sizes["y"])
         self.x_len = int(data_cube.sizes["x"])
 
-        print(self.y_len, self.x_len, self.time_len)
+        logger.info("ScienceCube bounds: y_len=%s x_len=%s time_len=%s", self.y_len, self.x_len, self.time_len)
 
         self.save_frame = True
 
         self.chunks_bounds = self.compute_bounds(time_slide = True, time_block=self.time_block_size, space_block=self.space_block_size)  # list of (t0,t1,y0,y1,x0,x1)
-        print(f'Chunks to process: {len(self.chunks_bounds)}')
-        self.chunk_idx = 0
+        if not (0 <= self.split_index < self.split_count):
+            raise ValueError(f"split_index must be in [0, {self.split_count - 1}]")
+        self.chunk_idx, self.max_chunk = self._compute_split_chunk_range(
+            total_chunks=len(self.chunks_bounds),
+            split_count=self.split_count,
+            split_index=self.split_index,
+        )
+
+        logger.info(
+            "Chunks to process:%s / %s (range %s..%s)",
+            max(0, self.max_chunk - self.chunk_idx),
+            len(self.chunks_bounds),
+            self.chunk_idx,
+            self.max_chunk,
+        )
 
         # fast membership test on ns-int
         self.times_ok_ns = np.asarray(times_ok_ns).astype("datetime64[ns]")
@@ -400,6 +472,21 @@ class XrFeatureDataset:
 
         return chunks
 
+    def _compute_split_chunk_range(self, total_chunks: int, split_count: int, split_index: int) -> tuple[int, int]:
+        """
+        Split work by frames (16 chunks per frame).
+        Returns (start_chunk_idx, end_chunk_idx_exclusive).
+        """
+        if total_chunks <= 0:
+            return 0, 0
+        frames_total = total_chunks // 16
+        frames_per_split = frames_total // split_count
+        start_frame = split_index * frames_per_split
+        end_frame = (split_index + 1) * frames_per_split
+        start_chunk = start_frame * 16
+        end_chunk = end_frame * 16
+        return start_chunk, min(end_chunk, total_chunks)
+
     def subchunk_for_split(self):
         """
         Build a subchunk (bands, time, y, x) and its coords from the given split_idx.
@@ -446,11 +533,11 @@ class XrFeatureDataset:
         #if self.chunk is None:
         warnings.filterwarnings('ignore')
 
-        if self.chunk_idx >= len(self.chunks_bounds):
+        if self.chunk_idx >= self.max_chunk:
             raise StopIteration
 
         t0, t1, y0, y1, x0, x1 = self.chunks_bounds[self.chunk_idx]
-        print(f"Getting chunk time={t0}-{t1} y={y0}-{y1} x={x0}-{x1}")
+        logger.info("Getting Chunk: time=%s-%s y=%s-%s x=%s-%s", t0, t1, y0, y1, x0, x1)
 
         chunk = self.data_cube.isel(
             time=slice(t0, t1),
@@ -462,18 +549,18 @@ class XrFeatureDataset:
 
         ct_idx = coords["time"].size // 2
         ct = np.datetime64(coords["time"][ct_idx]).astype("datetime64[ns]")
-        print(ct)
 
         if int(ct.astype("int64")) not in self._times_ok_set:
-            print(f"⏭️ Skipping chunk {self.chunk_idx}: center time {ct} not in times_ok_ns.")
+            logger.info("⏭️ Skipping chunk %s center time %s not in times_ok_ns", self.chunk_idx, ct)
             self.chunk_idx = ((self.chunk_idx // 16) + 1) * 16 - 1
             self.save_frame = False
-            print(f'Setting flag save frame to {self.save_frame}')
+            logger.info("Setting flag save frame to %s", self.save_frame)
             return None, None, None, None
+        else: logger.info("Center time=%s", ct)
 
         start_chunk_values = time.time()
         data = chunk.values
-        print(f"Chunk values computed in {time.time() - start_chunk_values:.3f} seconds")
+        logger.info("Chunk values computed in %.3fs", time.time() - start_chunk_values)
         valid_pixel_mask  = np.isnan(data[:12, 5, 7:-7, 7:-7])#.any(axis=0)
         non_nan_count = (~valid_pixel_mask).sum()
         if non_nan_count == 0:
@@ -483,13 +570,12 @@ class XrFeatureDataset:
         nan_count = valid_pixel_mask.sum()
 
 
-        print(f"Chunk NaNs: {nan_count:,}, Non-NaNs: {non_nan_count:,}")
-        print(f'Chunk shape: {data.shape}')
+        logger.info("Chunk NaNs: %s Non-NaNs: %s", f"{nan_count:,}", f"{non_nan_count:,}")
 
 
 
 
-        print(f'Splitting chunk {self.chunk_idx}')
+        logger.info("Splitting chunk %s (shape %s)", self.chunk_idx, data.shape)
         start_chunk_split = time.time()
 
         patches_all, coords_all, valid_mask_all, not_val = extract_sentinel2_patches_pool(
@@ -506,7 +592,7 @@ class XrFeatureDataset:
             inference=True,
         )
 
-        print(f"Patches preprocessed in {time.time() - start_chunk_split:.3f} seconds")
+        logger.info("Patches preprocessed in %.3fs", time.time() - start_chunk_split)
 
         #if patches_all.shape[0] == 0 and not_val: self.save_frame = False
 
@@ -531,7 +617,7 @@ batch_size = BATCH_SIZE
 cube_num = CUBE_ID
 eps = 1e-6  # avoid div by zero
 
-print(f'processing cube {cube_num}')
+logger.info("Processing cube %s", cube_num)
 ds = xr.open_zarr(f'{BASE_PATH}/{cube_num}.zarr')
 
 da = ds.s2l2a.where((ds.cloud_mask == 0))
@@ -552,9 +638,9 @@ feature_names = ['F01', 'F02', 'F03', 'F04', 'F05', 'F06']
 init_path = f"{BASE_PATH}/{cube_num}.zarr"
 output_path = f"{OUTPUT_PATH}/{cube_num}.zarr"
 ds0, times_ok_ns, global_xs, global_ys = init_output_from_source(da, feature_names, output_path)
-print(times_ok_ns)
+logger.info("times_ok_ns count: %s", len(times_ok_ns))
 
-print(f'creating feature_{cube_num}.zarr')
+logger.info("Creating feature_%s.zarr", cube_num)
 
 
 x_to_idx = {float(v): i for i, v in enumerate(global_xs)} #['2016-12-27T10:54:42.026000000'
@@ -570,6 +656,8 @@ current_time = None
 dataset = XrFeatureDataset(
     data_cube=da,
     times_ok_ns = times_ok_ns,
+    split_count=SPLIT_COUNT,
+    split_index=SPLIT_INDEX,
 )
 
 chunk_processed_time = time.time()
@@ -579,7 +667,7 @@ for chunk_idx, chunk in enumerate(dataset):
     mape_sum = 0.0
     count = 0
     start_time = time.time()
-    print(f'Chunk {chunk_idx} received in {start_time-chunk_processed_time:.2f} seconds')
+    logger.info("Chunk %s received in %.2fs", chunk_idx, start_time - chunk_processed_time)
     processed_data, coords, valid_mask, time_gaps_s2, = chunk
 
     if processed_data is None: N = 0
@@ -599,12 +687,8 @@ for chunk_idx, chunk in enumerate(dataset):
         batch_mask = valid_mask[start:end].to(device, dtype=torch.bool)
         batch_s2 = time_gaps_s2[start:end].to(device, dtype=torch.int32)
         #y_all, zf = model(batch_processed, batch_s2)
-        try:
-            y_all, zf = model(batch_processed, batch_s2)
-        except Exception as e:
-            print(str(e))
-            print(batch_s2.shape)
-            print(batch_processed.shape)
+
+        y_all, zf = model(batch_processed, batch_s2)
 
         # --- central coordinate ---
         B, T, C, H, W = batch_processed.shape
@@ -639,7 +723,12 @@ for chunk_idx, chunk in enumerate(dataset):
         mape_sum += (diff / valid_in.abs().clamp_min(eps)).sum().item()
         count += valid_mask[:, ct, :, cx, cy].sum().item()
     chunk_processed_time = time.time()
-    print(f'Chunk {dataset.chunk_idx} ({cube_num}) processed in {chunk_processed_time - start_time:.3f} s')
+    logger.info(
+        "Chunk %s, cube=%s processed in %.3fs",
+        dataset.chunk_idx,
+        cube_num,
+        chunk_processed_time - start_time,
+    )
 
     start_global_metrics = time.time()
     # global center metrics
@@ -652,18 +741,18 @@ for chunk_idx, chunk in enumerate(dataset):
 
         if dataset.save_frame:
             saved = flush_frame(canvas=current_canvas, f_ds=ds0, out_path=output_path, time=current_time)
-            print(f"🗂️ Frame {np.datetime_as_string(current_time, unit='D')} "
-                  f"{'saved' if saved else 'skipped (<5% coverage)'}.")
+            logger.info(
+                "🗂️ Frame : date=%s status=%s",
+                np.datetime_as_string(current_time, unit='D'),
+                "saved" if saved else "skipped (<5% coverage)",
+            )
             reset_frame()
         else: dataset.save_frame = True
-        print(f'Flash frame in {time.time() - start_flash:.3f} seconds')
 
     dataset.chunk_idx += 1
-    print(f"✅ Central-pixel Chunk MAE:  {chunk_mae:.6f}")
-    print(f"✅ Central-pixel Chunk MAPE: {chunk_mape:.4f}%")
-    print(f"✅ Global metrics computed in {time.time() - start_global_metrics:.3f} seconds")
-
-    print(f"✅ Iteration ended in {time.time() - start_time:.3f} seconds\n")
+    logger.info("Central-pixel Chunk MAE: %.6f", chunk_mae)
+    logger.info("Central-pixel Chunk MAPE: %.4f%%", chunk_mape)
+    logger.info("Iteration ended in %.3fs\n", time.time() - start_time)
 
 
 
