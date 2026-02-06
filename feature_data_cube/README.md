@@ -68,4 +68,4 @@ This output contains:
 - Shape: `(6, time, y, x)`
 - The 6-dimensional latent features reconstructed for each valid timestamp.
 
-Only timestamps with sufficient valid pixels are included; all other positions contain `NaN`.
+Only timestamps with sufficient valid pixels are included; all others are discarded.
