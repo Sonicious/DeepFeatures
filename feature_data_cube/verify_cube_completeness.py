@@ -6,7 +6,9 @@ zarr_path = '/net/data/deepfeatures/feature/004.zarr'
 
 ## Open the dataset
 ds_reloaded = xr.open_zarr(zarr_path, chunks=None)
+print(ds_reloaded)
 
+#ds_reloaded = ds_reloaded.isel(time=slice(0, 422))
 # Assign names to the 'feature' dimension
 ds_reloaded = ds_reloaded.assign_coords(feature=[f"feature_{i}" for i in range(ds_reloaded.dims['feature'])])
 
@@ -41,3 +43,8 @@ available_percentage = 100 - (total_nan_count / total_elements * 100)
 
 print(f"\nOverall available data (non-NaN): {available_percentage:.2f}%")
 #print(f"\nOverall available data (non-NaN): {total_elements}")
+
+# Timestamps with any non-NaN values
+timestamps_with_data = int((nan_counts < total_elements_per_timestep).sum().item())
+total_timestamps = int(data.sizes['time'])
+print(f"\nTimestamps with non-NaN values: {timestamps_with_data} / {total_timestamps}")
