@@ -5,17 +5,19 @@
 Defaults are defined in the script and can be overridden by CLI args.
 
 ```
-CUDA_DEVICE     = 'cuda:3'                                               # GPU Device used for inference
-CUBE_ID         = '061'                                                  # ID of the ScienceCube you want to process
-BATCH_SIZE      = 550                                                    # Model inference batch size
-BASE_PATH       = '/net/data/deepfeatures/science/0.1.0'                 # location of stored ScienceCube
-OUTPUT_PATH     = '/net/data/deepfeatures/feature'                       # FeatureCubes output path
-CHECKPOINT_PATH = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"  # model weights location
-PROCESSES       = 6                                                      # number of processes for patch creation & processing
-SPLIT_COUNT     = 2                                                      # total number of parallel runs
-SPLIT_INDEX     = 0                                                      # which split this run should process 
-                                                                         # (SPLIT_INDEX=0: run first 50% of timestamps,
-                                                                         #  SPLIT_INDEX=1 run second 50% of timestamps)
+CUDA_DEVICE           = 'cuda:3'                                                                           # GPU Device used for inference
+CUBE_ID                    = '061'                                                                                # ID of the ScienceCube you want to process
+BATCH_SIZE              = 550                                                                                 # Model inference batch size
+BASE_PATH               = '/net/data/deepfeatures/science/0.1.0'                             # location of stored ScienceCube
+OUTPUT_PATH          = '/net/data/deepfeatures/feature'                                      # FeatureCubes output path
+CHECKPOINT_PATH  = "../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt"  # model weights location
+PROCESSES              = 6                                                                                     # number of processes for patch creation & processing
+SPLIT_COUNT           = 1                                                                                      # total number of parallel runs
+SPLIT_INDEX             = 0                                                                                     # which split this run should process 
+                                                                                                                           # (SPLIT_INDEX=0: run first 50% of timestamps,
+                                                                                                                           #  SPLIT_INDEX=1 run second 50% of timestamps)
+SPACE_BLOCK_SIZE = 125                                                                                   # divides chunk of 11 frames  into Y/125 × X/125 spatial subchunks for patch generation
+LOG_LEVEL        = 'INFO'                                                                                     # logging level (DEBUG, INFO, WARNING, ERROR)
 ```
 
 `BASE_PATH` must point to a directory that contains the input ScienceCubes:
@@ -38,8 +40,9 @@ python feature_data_cube.py \
   --output-path /net/data/deepfeatures/feature \
   --checkpoint-path ../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt \
   --processes 6 \
-  --split-count 2 \
-  --split-index 1 \
+  --split-count 1 \
+  --split-index 0 \
+  --space_block_size 125 \
   --log-level INFO
 ```
 

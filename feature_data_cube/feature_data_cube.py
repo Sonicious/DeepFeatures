@@ -19,16 +19,17 @@ from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
 parser = argparse.ArgumentParser(description="Feature data cube extraction")
-parser.add_argument("--cuda-device", default="cuda:3")                                                   # CUDA_DEVICE
-parser.add_argument("--cube-id", default='061')                                                          # CUBE_ID
-parser.add_argument("--batch-size", type=int, default=550)                                               # BATCH_SIZE
-parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                       # BASE_PATH
-parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                           # OUTPUT_PATH
+parser.add_argument("--cuda-device", default="cuda:3")                                                                                # CUDA_DEVICE
+parser.add_argument("--cube-id", default='061')                                                                                             # CUBE_ID
+parser.add_argument("--batch-size", type=int, default=550)                                                                           # BATCH_SIZE
+parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                                       # BASE_PATH
+parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                                             # OUTPUT_PATH
 parser.add_argument("--checkpoint-path", default="../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt")  # CHECKPOINT_PATH
-parser.add_argument("--processes", type=int, default=6)                                                  # PROCESSES
-parser.add_argument("--split-count", type=int, default=2)                                                # SPLIT_COUNT
-parser.add_argument("--split-index", type=int, default=0)                                                # SPLIT_INDEX
-parser.add_argument("--log-level", default="INFO")                                                       # LOG_LEVEL
+parser.add_argument("--processes", type=int, default=6)                                                                                # PROCESSES
+parser.add_argument("--split-count", type=int, default=1)                                                                                # SPLIT_COUNT
+parser.add_argument("--split-index", type=int, default=0)                                                                                # SPLIT_INDEX
+parser.add_argument("--space_block_size", type=int, default=125)                                                                      # SPACE_BLOCK_SIZE
+parser.add_argument("--log-level", default="INFO")                                                                                         # LOG_LEVEL
 args = parser.parse_args()
 
 CUDA_DEVICE = args.cuda_device
@@ -40,6 +41,7 @@ CHECKPOINT_PATH = args.checkpoint_path
 PROCESSES = args.processes
 SPLIT_COUNT = args.split_count
 SPLIT_INDEX = args.split_index
+SPACE_BLOCK_SIZE = args.space_block_size
 LOG_LEVEL = args.log_level
 _log_level_str = str(LOG_LEVEL).upper()
 if _log_level_str in ("DEBUG", "10"):
@@ -48,7 +50,7 @@ elif _log_level_str in ("INFO", "20"):
     LOG_LEVEL_INT = logging.INFO
 
 
-
+print(SPACE_BLOCK_SIZE)
 
 logging.basicConfig(
     level=LOG_LEVEL_INT,
@@ -371,7 +373,7 @@ class XrFeatureDataset:
             data_cube: xr.DataArray,
             times_ok_ns,
             time_block_size: int = 11,
-            space_block_size: int = 250,
+            space_block_size: int = SPACE_BLOCK_SIZE,
             time_overlap: int = 10,
             space_overlap: int = 14,
             split_count: int = 1,
@@ -390,6 +392,8 @@ class XrFeatureDataset:
         self.time_len = int(data_cube.sizes["time"])
         self.y_len = int(data_cube.sizes["y"])
         self.x_len = int(data_cube.sizes["x"])
+
+        self.chunk_split = int(self.y_len / self.space_block_size * self.x_len / self.space_block_size)
 
         logger.info("ScienceCube bounds: y_len=%s x_len=%s time_len=%s", self.y_len, self.x_len, self.time_len)
 
@@ -474,17 +478,17 @@ class XrFeatureDataset:
 
     def _compute_split_chunk_range(self, total_chunks: int, split_count: int, split_index: int) -> tuple[int, int]:
         """
-        Split work by frames (16 chunks per frame).
+        Split work by frames (self.chunk_split chunks per frame).
         Returns (start_chunk_idx, end_chunk_idx_exclusive).
         """
         if total_chunks <= 0:
             return 0, 0
-        frames_total = total_chunks // 16
+        frames_total = total_chunks // self.chunk_split
         frames_per_split = frames_total // split_count
         start_frame = split_index * frames_per_split
         end_frame = (split_index + 1) * frames_per_split
-        start_chunk = start_frame * 16
-        end_chunk = end_frame * 16
+        start_chunk = start_frame * self.chunk_split
+        end_chunk = end_frame * self.chunk_split
         return start_chunk, min(end_chunk, total_chunks)
 
     def subchunk_for_split(self):
@@ -552,7 +556,7 @@ class XrFeatureDataset:
 
         if int(ct.astype("int64")) not in self._times_ok_set:
             logger.info("⏭️ Skipping chunk %s center time %s not in times_ok_ns", self.chunk_idx, ct)
-            self.chunk_idx = ((self.chunk_idx // 16) + 1) * 16 - 1
+            self.chunk_idx = ((self.chunk_idx // self.chunk_split) + 1) * self.chunk_split - 1
             self.save_frame = False
             logger.info("Setting flag save frame to %s", self.save_frame)
             return None, None, None, None
@@ -735,8 +739,8 @@ for chunk_idx, chunk in enumerate(dataset):
     chunk_mae = mae_sum / max(count, 1)
     chunk_mape = 100.0 * mape_sum / max(count, 1)
 
-    # Your rule: after every 16 chunks, flush the frame
-    if (dataset.chunk_idx + 1) % 16 == 0:
+    # Your rule: after every self.chunk_split chunks, flush the frame
+    if (dataset.chunk_idx + 1) % dataset.chunk_split == 0:
         start_flash = time.time()
 
         if dataset.save_frame:
