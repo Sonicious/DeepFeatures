@@ -21,13 +21,13 @@ from dataset.preprocess_sentinel import extract_sentinel2_patches
 parser = argparse.ArgumentParser(description="Feature data cube extraction")
 parser.add_argument("--cuda-device", default="cuda:3")                                                   # CUDA_DEVICE
 parser.add_argument("--cube-id", default='061')                                                          # CUBE_ID
-parser.add_argument("--batch-size", type=int, default=550)                                               # BATCH_SIZE
+parser.add_argument("--batch-size", type=int, default=250)                                               # BATCH_SIZE
 parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                       # BASE_PATH
 parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                           # OUTPUT_PATH
 parser.add_argument("--checkpoint-path", default="../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt")  # CHECKPOINT_PATH
 parser.add_argument("--processes", type=int, default=6)                                                  # PROCESSES
-parser.add_argument("--split-count", type=int, default=1)                                                # SPLIT_COUNT
-parser.add_argument("--split-index", type=int, default=0)                                                # SPLIT_INDEX
+parser.add_argument("--split-count", type=int, default=10)                                                # SPLIT_COUNT
+parser.add_argument("--split-index", type=int, default=9)                                                # SPLIT_INDEX
 parser.add_argument("--space_block_size", type=int, default=125)                                         # SPACE_BLOCK_SIZE
 parser.add_argument("--log-level", default="INFO")                                                       # LOG_LEVEL
 args = parser.parse_args()
@@ -48,9 +48,6 @@ if _log_level_str in ("DEBUG", "10"):
     LOG_LEVEL_INT = logging.DEBUG
 elif _log_level_str in ("INFO", "20"):
     LOG_LEVEL_INT = logging.INFO
-
-
-print(SPACE_BLOCK_SIZE)
 
 logging.basicConfig(
     level=LOG_LEVEL_INT,
@@ -668,7 +665,6 @@ chunk_processed_time = time.time()
 
 for chunk_idx, chunk in enumerate(dataset):
     mae_sum = 0.0
-    mape_sum = 0.0
     count = 0
     start_time = time.time()
     logger.info("Chunk %s received in %.2fs", chunk_idx, start_time - chunk_processed_time)
@@ -724,8 +720,7 @@ for chunk_idx, chunk in enumerate(dataset):
 
         diff = (valid_out - valid_in).abs()
         mae_sum += diff.sum().item()
-        mape_sum += (diff / valid_in.abs().clamp_min(eps)).sum().item()
-        count += valid_mask[:, ct, :, cx, cy].sum().item()
+        count += central_mask.sum().item()
     chunk_processed_time = time.time()
     logger.info(
         "Chunk %s, cube=%s processed in %.3fs",
@@ -737,8 +732,6 @@ for chunk_idx, chunk in enumerate(dataset):
     start_global_metrics = time.time()
     # global center metrics
     chunk_mae = mae_sum / max(count, 1)
-    chunk_mape = 100.0 * mape_sum / max(count, 1)
-
     # Your rule: after every self.chunk_split chunks, flush the frame
     if (dataset.chunk_idx + 1) % dataset.chunk_split == 0:
         start_flash = time.time()
@@ -755,7 +748,6 @@ for chunk_idx, chunk in enumerate(dataset):
 
     dataset.chunk_idx += 1
     logger.info("Central-pixel Chunk MAE: %.6f", chunk_mae)
-    logger.info("Central-pixel Chunk MAPE: %.4f%%", chunk_mape)
     logger.info("Iteration ended in %.3fs\n", time.time() - start_time)
 
 
