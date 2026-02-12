@@ -25,7 +25,7 @@ SPLIT_INDEX             = 0                                                     
                                                                                                                            # (SPLIT_INDEX=0: run first 50% of timestamps,
                                                                                                                            #  SPLIT_INDEX=1 run second 50% of timestamps)
 SPACE_BLOCK_SIZE = 125                                                                                   # divides chunk of 11 frames  into Y/125 × X/125 spatial subchunks for patch generation
-LOG_LEVEL        = 'INFO'                                                                                     # logging level (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL              = 'INFO'                                                                               # logging level (DEBUG, INFO, WARNING, ERROR)
 ```
 
 `BASE_PATH` must point to a directory that contains the input ScienceCubes:
