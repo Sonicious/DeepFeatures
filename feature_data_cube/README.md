@@ -1,4 +1,12 @@
 # README  
+
+## Hardware Requirements
+
+- **RAM**: 90 GB (recommended for processing large ScienceCubes)
+- **GPU**: CUDA-compatible GPU with sufficient VRAM (recommended: 8+ GB depending on batch size used for inference)
+
+---
+
 ## Script Usage
 
 ### **Parameters to set**
