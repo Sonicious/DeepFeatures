@@ -19,17 +19,17 @@ from dataset.preprocess_sentinel import extract_sentinel2_patches
 
 
 parser = argparse.ArgumentParser(description="Feature data cube extraction")
-parser.add_argument("--cuda-device", default="cuda:3")                                                                                # CUDA_DEVICE
-parser.add_argument("--cube-id", default='061')                                                                                             # CUBE_ID
-parser.add_argument("--batch-size", type=int, default=550)                                                                           # BATCH_SIZE
-parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                                       # BASE_PATH
-parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                                             # OUTPUT_PATH
+parser.add_argument("--cuda-device", default="cuda:3")                                                   # CUDA_DEVICE
+parser.add_argument("--cube-id", default='061')                                                          # CUBE_ID
+parser.add_argument("--batch-size", type=int, default=550)                                               # BATCH_SIZE
+parser.add_argument("--base-path", default='/net/data/deepfeatures/science/0.1.0')                       # BASE_PATH
+parser.add_argument("--output-path", default='/net/data/deepfeatures/feature')                           # OUTPUT_PATH
 parser.add_argument("--checkpoint-path", default="../checkpoints/ae-epoch=141-val_loss=4.383e-03.ckpt")  # CHECKPOINT_PATH
-parser.add_argument("--processes", type=int, default=6)                                                                                # PROCESSES
-parser.add_argument("--split-count", type=int, default=1)                                                                                # SPLIT_COUNT
-parser.add_argument("--split-index", type=int, default=0)                                                                                # SPLIT_INDEX
-parser.add_argument("--space_block_size", type=int, default=125)                                                                      # SPACE_BLOCK_SIZE
-parser.add_argument("--log-level", default="INFO")                                                                                         # LOG_LEVEL
+parser.add_argument("--processes", type=int, default=6)                                                  # PROCESSES
+parser.add_argument("--split-count", type=int, default=1)                                                # SPLIT_COUNT
+parser.add_argument("--split-index", type=int, default=0)                                                # SPLIT_INDEX
+parser.add_argument("--space_block_size", type=int, default=125)                                         # SPACE_BLOCK_SIZE
+parser.add_argument("--log-level", default="INFO")                                                       # LOG_LEVEL
 args = parser.parse_args()
 
 CUDA_DEVICE = args.cuda_device
