@@ -23,9 +23,10 @@ PROCESSES			= 6 													# number of processes for patch creation & processi
 SPLIT_COUNT			= 1 													# total number of parallel runs
 SPLIT_INDEX			= 0 													# which split this run should process 
 																			# (SPLIT_INDEX=0: run first 50% of timestamps,
-																			# SPLIT_INDEX=1 run second 50% of timestamps)
-SPACE_BLOCK_SIZE 	= 125 													# divides chunk of 11 frames into Y/125 × X/125 spatial subchunks for patch generation
+																			#  SPLIT_INDEX=1: run second 50% of timestamps)
 LOG_LEVEL 		    = 'INFO' 												# logging level (DEBUG, INFO)
+SPACE_BLOCK_SIZE 	= 125 													# divides chunk of 11 frames into Y/125 × X/125 
+                                                                            # spatial subchunks for patch generation
 ```
 
 `BASE_PATH` must point to a directory that contains the input ScienceCubes:
@@ -55,12 +56,12 @@ python feature_data_cube.py \
 ```
 
 ## **Input**
-- Sentinel-2 ScienceCubes stored as Zarr datasets  
-  Example:  
-  ```
-  /net/data/deepfeatures/science/0.1.0/017.zarr
-  /net/data/deepfeatures/science/0.1.0/039.zarr
-  ```
+Sentinel-2 ScienceCubes stored as Zarr datasets  
+Example:  
+```
+/net/data/deepfeatures/science/0.1.0/017.zarr
+/net/data/deepfeatures/science/0.1.0/039.zarr
+```
 
 Each cube should include `s2l2a`, `cloud_mask`, and standard `time/y/x` coordinates.
 
