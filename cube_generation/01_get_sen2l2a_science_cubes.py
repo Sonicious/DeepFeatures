@@ -8,6 +8,9 @@ import utils
 
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
+    idx = site_params["ID"]
+    constants.LOG.info(f"Generation of cube {idx} started.")
+
     bbox = utils.create_utm_bounding_box(
         site_params["lat"], site_params["lon"], box_size_km=10
     )
@@ -56,6 +59,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
         ["2022-01-01", "2022-12-31"],
         ["2023-01-01", "2023-12-31"],
         ["2024-01-01", "2024-12-31"],
+        ["2025-01-01", "2025-12-31"],
     ]
     for time_range in time_ranges:
         data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
@@ -95,7 +99,6 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
-    for idx in [52]:
-        constants.LOG.info(f"Generation of cube {idx} started.")
-        site_params = sites_params.loc[idx]
+    for numb in [0]:
+        site_params = sites_params.loc[numb]
         get_s2l2a(super_store, site_params)
