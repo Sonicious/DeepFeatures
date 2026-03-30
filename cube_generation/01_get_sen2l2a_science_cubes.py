@@ -8,7 +8,7 @@ import utils
 
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
-    idx = site_params["ID"]
+    idx = int(site_params["ID"])
     constants.LOG.info(f"Generation of cube {idx} started.")
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
