@@ -10,10 +10,6 @@ import utils
 def get_s2l2a(super_store: dict, site_params: pd.Series):
     idx = site_params["ID"]
     constants.LOG.info(f"Generation of cube {idx} started.")
-
-    bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lon"], box_size_km=10
-    )
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
     def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
@@ -21,12 +17,12 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
                 data_id="sentinel-2-l2a",
-                bbox=bbox["bbox_utm"],
-                crs=f"EPSG:326{bbox["utm_zone"][:2]}",
+                point=(site_params["lon"], site_params["lat"]),
+                bbox_width=10000,
                 spatial_res=constants.SPATIAL_RES,
                 time_range=time_range,
                 apply_scaling=True,
-                angles_sentinel2=True,
+                add_angles=True,
                 asset_names=[
                     "B01",
                     "B02",
@@ -85,7 +81,7 @@ if __name__ == "__main__":
         cdse_credentails = json.load(f)
 
     super_store = dict(
-        store_stac=new_data_store("stac-cdse", stack_mode=True, **cdse_credentails),
+        store_stac=new_data_store("stac-cdse-ardc", **cdse_credentails),
         store_team=new_data_store(
             "s3",
             root=s3_credentials["bucket"],
