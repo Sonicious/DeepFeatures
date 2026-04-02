@@ -8,9 +8,8 @@ import utils
 
 
 def get_s2l2a(super_store: dict, site_params: pd.Series):
-    bbox = utils.create_utm_bounding_box(
-        site_params["lat"], site_params["lon"], box_size_km=10
-    )
+    idx = int(site_params["ID"])
+    constants.LOG.info(f"Generation of cube {idx} started.")
     data_id = f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{idx:03}.zarr"
 
     def _get_s2l2a_year(time_range: list[str], data_id_mod: str):
@@ -18,12 +17,12 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
             constants.LOG.info(f"Open cube {idx} for year {time_range[1][:4]}.")
             ds = super_store["store_stac"].open_data(
                 data_id="sentinel-2-l2a",
-                bbox=bbox["bbox_utm"],
-                crs=f"EPSG:326{bbox["utm_zone"][:2]}",
+                point=(site_params["lon"], site_params["lat"]),
+                bbox_width=10000,
                 spatial_res=constants.SPATIAL_RES,
                 time_range=time_range,
                 apply_scaling=True,
-                angles_sentinel2=True,
+                add_angles=True,
                 asset_names=[
                     "B01",
                     "B02",
@@ -56,6 +55,7 @@ def get_s2l2a(super_store: dict, site_params: pd.Series):
         ["2022-01-01", "2022-12-31"],
         ["2023-01-01", "2023-12-31"],
         ["2024-01-01", "2024-12-31"],
+        ["2025-01-01", "2025-12-31"],
     ]
     for time_range in time_ranges:
         data_id_mod = data_id.replace(".zarr", f"_{time_range[1][:4]}.zarr")
@@ -81,7 +81,7 @@ if __name__ == "__main__":
         cdse_credentails = json.load(f)
 
     super_store = dict(
-        store_stac=new_data_store("stac-cdse", stack_mode=True, **cdse_credentails),
+        store_stac=new_data_store("stac-cdse-ardc", **cdse_credentails),
         store_team=new_data_store(
             "s3",
             root=s3_credentials["bucket"],
@@ -95,7 +95,6 @@ if __name__ == "__main__":
     )
 
     sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
-    for idx in [52]:
-        constants.LOG.info(f"Generation of cube {idx} started.")
-        site_params = sites_params.loc[idx]
+    for numb in [0]:
+        site_params = sites_params.loc[numb]
         get_s2l2a(super_store, site_params)
