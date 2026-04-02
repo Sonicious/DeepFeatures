@@ -1,46 +1,58 @@
-import os
 import csv
-import time
-import math
 import itertools
+import math
 import random
+import time
 from pathlib import Path
+from typing import Dict, List
 
+import lightning.pytorch as pl
 import torch
 import torch.nn as nn
-import lightning.pytorch as pl
 from lightning.pytorch.callbacks import (
-    ModelCheckpoint, EarlyStopping, LearningRateMonitor, TQDMProgressBar
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
 )
 from lightning.pytorch.loggers import CSVLogger
 
-# ---- Your modules ----
 from GPP_loader import make_loaders
 from model import GPPTemporalTransformer
+
 try:
-    from .config import INCLUDE_STD_FEATURES, OUT_DIR
+    from .config import (
+        CUBE_IDS,
+        INCLUDE_STD_FEATURES,
+        LOSO_VAL_SITES,
+        OUT_DIR,
+    )
 except ImportError:
-    from config import INCLUDE_STD_FEATURES, OUT_DIR
+    from config import (
+        CUBE_IDS,
+        INCLUDE_STD_FEATURES,
+        LOSO_VAL_SITES,
+        OUT_DIR,
+    )
+
+from sites import sites_dict
+
 SEED = 42
-DEVICE_ID = 1                 # cuda device index, e.g. 0/1/2/3
+DEVICE_ID = 1
 MAX_EPOCHS = 150
 MAX_TRIALS = 180
-# ------------------------------------------------------------------
-# Reproducibility + performance
-# ------------------------------------------------------------------
-def set_seed(seed=42):
+
+
+def set_seed(seed: int = 42) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-set_seed(42)
-torch.set_float32_matmul_precision('high')  # RTX A6000 Tensor Cores optimization
 
-
-
-
+set_seed(SEED)
+torch.set_float32_matmul_precision("high")
 
 BASE = OUT_DIR
 
@@ -48,8 +60,6 @@ WINDOW = 90
 OVERLAP = 80
 STRIDE = WINDOW - OVERLAP
 QC_THRESH = 70.0
-TRAIN_YEARS = "2017-2019"
-VAL_YEARS = "2020"
 FEATURE_SOURCE = "linear"
 RADIATION_MODE = "noRad"
 
@@ -64,8 +74,59 @@ RADIATION_MODE_TAGS = {
     "noRad": "noRad",
 }
 
+FEATURE_TAG = "meanstd" if INCLUDE_STD_FEATURES else "mean"
+NUM_FEATURES = 12 if INCLUDE_STD_FEATURES else 6
 
-def build_dataset_paths(base: str):
+
+def _dataset_variant_tag() -> str:
+    in_dir_str = str(OUT_DIR).lower()
+    return "no_si" if "no_si" in in_dir_str else "si"
+
+SPACE = {
+    "num_features": [NUM_FEATURES],
+    "batch_size": [12],
+    "d_model": [96],
+    "nhead": [16],
+    "num_layers": [3],
+    "dim_ff": [1024],
+    "dropout": [0.05],
+    "pool": ["last"],
+    "lr": [1e-4],
+    "weight_decay": [1e-6],
+    "warmup_steps": [200],
+    "reduce_pat": [7],
+    "reduce_factor": [0.1],
+}
+
+
+def _available_sites() -> List[str]:
+    sites = []
+    for cid in CUBE_IDS:
+        site = sites_dict.get(cid, [None])[0]
+        if site is not None:
+            sites.append(site)
+    return sites
+
+
+def _build_fold_defs() -> List[Dict[str, str]]:
+    variant_tag = _dataset_variant_tag()
+    sites = _available_sites()
+    holdout_sites = list(LOSO_VAL_SITES) if LOSO_VAL_SITES else sites
+    folds = []
+    for holdout_site in holdout_sites:
+        if holdout_site not in sites:
+            print(f"⚠️  LOSO hold-out site {holdout_site} is not covered by CUBE_IDS - skip")
+            continue
+        folds.append({
+            "name": f"loso_{holdout_site}",
+            "train_dataset_tag": f"sitesTrain_excl_{holdout_site}",
+            "val_dataset_tag": f"sitesVal_{holdout_site}",
+            "run_tag": f"{FEATURE_SOURCE}_{FEATURE_TAG}_{RADIATION_MODE}_{variant_tag}_loso_{holdout_site}",
+        })
+    return folds
+
+
+def build_dataset_paths(base: str, train_dataset_tag: str, val_dataset_tag: str):
     if FEATURE_SOURCE not in FEATURE_SOURCE_TAGS:
         raise ValueError(f"Unknown FEATURE_SOURCE: {FEATURE_SOURCE}")
     if RADIATION_MODE not in RADIATION_MODE_TAGS:
@@ -73,80 +134,56 @@ def build_dataset_paths(base: str):
 
     source_tag = FEATURE_SOURCE_TAGS[FEATURE_SOURCE]
     rad_tag = RADIATION_MODE_TAGS[RADIATION_MODE]
-    feature_tag = "meanstd" if INCLUDE_STD_FEATURES else "mean"
 
     train_npz = (
-        f"{base}/gpp_{WINDOW}day_samples_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}"
-        f"_years{TRAIN_YEARS}_{source_tag}_{feature_tag}_{rad_tag}_gppstd_train.npz"
+        f"{base}/gpp_{WINDOW}day_samples_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}_"
+        f"{train_dataset_tag}_{source_tag}_{FEATURE_TAG}_{rad_tag}_gppstd_train.npz"
     )
     train_meta = (
-        f"{base}/gpp_{WINDOW}day_samples_meta_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}"
-        f"_years{TRAIN_YEARS}_{source_tag}_{feature_tag}_{rad_tag}_train.csv"
+        f"{base}/gpp_{WINDOW}day_samples_meta_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}_"
+        f"{train_dataset_tag}_{source_tag}_{FEATURE_TAG}_{rad_tag}_train.csv"
     )
     val_npz = (
-        f"{base}/gpp_{WINDOW}day_samples_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}"
-        f"_years{VAL_YEARS}_{source_tag}_{feature_tag}_{rad_tag}_gppstd_val.npz"
+        f"{base}/gpp_{WINDOW}day_samples_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}_"
+        f"{val_dataset_tag}_{source_tag}_{FEATURE_TAG}_{rad_tag}_gppstd_val.npz"
     )
     val_meta = (
-        f"{base}/gpp_{WINDOW}day_samples_meta_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}"
-        f"_years{VAL_YEARS}_{source_tag}_{feature_tag}_{rad_tag}_val.csv"
+        f"{base}/gpp_{WINDOW}day_samples_meta_stride{STRIDE}_overlap{OVERLAP}_qc{QC_THRESH}_"
+        f"{val_dataset_tag}_{source_tag}_{FEATURE_TAG}_{rad_tag}_val.csv"
     )
     return train_npz, train_meta, val_npz, val_meta
-
-
-TRAIN_NPZ, TRAIN_META, VAL_NPZ, VAL_META = build_dataset_paths(BASE)
-FEATURE_TAG = "meanstd" if INCLUDE_STD_FEATURES else "mean"
-NUM_FEATURES = 12 if INCLUDE_STD_FEATURES else 6
-RUN_TAG = f"{FEATURE_SOURCE}_{FEATURE_TAG}_{RADIATION_MODE}_{TRAIN_YEARS}_to_{VAL_YEARS}"
-RESULTS_CSV = f"grid_results_{RUN_TAG}.csv"
-LOG_DIR = f"grid_logs_2_{RUN_TAG}"
-
-
-SPACE  = {
-        "num_features":  [NUM_FEATURES],
-        "batch_size":    [6, 12],          # <- you asked for these
-        "d_model":       [96],
-        "nhead":         [4, 8, 16],          # filtered to divide d_model
-        "num_layers":    [3, 4],
-        "dim_ff":        [1024],
-        "dropout":       [0.05],
-        "pool":          ["last",],
-        "lr":            [1e-4],
-        "weight_decay":  [1e-6],
-        "warmup_steps":  [200, 300, 400],
-        "reduce_pat":    [7],
-        "reduce_factor": [0.1],
-    }
-
-# → status: ok, best val: 0.494917, ckpt: grid_logs/bs6_dm128_h4_L3_ff1024_do0p05_last_lr0p0001_wd1e-06_wu400_rp7_rf0p1/checkpoints/best-epoch=63-val_loss=0.4949.ckpt
-
-
-def set_seed(seed=42):
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 def build_search_space():
     keys = list(SPACE.keys())
     all_combos = (dict(zip(keys, vals)) for vals in itertools.product(*(SPACE[k] for k in keys)))
-    valid = [c for c in all_combos if (c["d_model"] % c["nhead"] == 0)]
-    return valid
+    return [c for c in all_combos if c["d_model"] % c["nhead"] == 0]
 
 
-def run_once(params, max_epochs=MAX_EPOCHS, log_dir=LOG_DIR):
-    """Train one config; return metrics dict."""
+def run_once(params, fold_def: Dict[str, str], max_epochs: int = MAX_EPOCHS):
+    """Train one config for one fold; return metrics dict."""
     set_seed(SEED)
 
-    loaders = make_loaders(
-        TRAIN_NPZ, TRAIN_META, VAL_NPZ, VAL_META,
-        batch_size=params["batch_size"],
-        time_first=True, num_workers=8, pin_memory=True,
-        #feature_slice = list(range(6))
+    train_npz, train_meta, val_npz, val_meta = build_dataset_paths(
+        BASE,
+        train_dataset_tag=fold_def["train_dataset_tag"],
+        val_dataset_tag=fold_def["val_dataset_tag"],
     )
 
+    for path in [train_npz, train_meta, val_npz, val_meta]:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Missing dataset file for {fold_def['name']}: {path}")
+
+    loaders = make_loaders(
+        train_npz,
+        train_meta,
+        val_npz,
+        val_meta,
+        batch_size=params["batch_size"],
+        time_first=True,
+        num_workers=8,
+        pin_memory=True,
+    )
 
     model = GPPTemporalTransformer(
         num_features=params["num_features"],
@@ -163,18 +200,21 @@ def run_once(params, max_epochs=MAX_EPOCHS, log_dir=LOG_DIR):
         reduce_patience=params["reduce_pat"],
         reduce_factor=params["reduce_factor"],
     )
-    model.criterion = nn.L1Loss()  # MAE
+    model.criterion = nn.L1Loss()
 
     run_name = (
-        f"bs{params['batch_size']}_dm{params['d_model']}_h{params['nhead']}"
+        f"{fold_def['name']}_bs{params['batch_size']}_dm{params['d_model']}_h{params['nhead']}"
         f"_L{params['num_layers']}_ff{params['dim_ff']}_do{params['dropout']}"
         f"_{params['pool']}_lr{params['lr']}_wd{params['weight_decay']}"
         f"_wu{params['warmup_steps']}_rp{params['reduce_pat']}_rf{params['reduce_factor']}"
     ).replace(".", "p")
 
-    logger = CSVLogger(save_dir=str(log_dir), name=run_name, version="")
+    log_dir = f"grid_logs_2_{fold_def['run_tag']}"
+    logger = CSVLogger(save_dir=log_dir, name=run_name, version="")
     ckpt_cb = ModelCheckpoint(
-        monitor="val_loss", mode="min", save_top_k=1,
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
         filename="best-{epoch:02d}-{val_loss:.4f}",
     )
     callbacks = [
@@ -201,7 +241,8 @@ def run_once(params, max_epochs=MAX_EPOCHS, log_dir=LOG_DIR):
     best_path = ""
     try:
         trainer.fit(model, train_dataloaders=loaders["train"], val_dataloaders=loaders["val"])
-        best_val = float(ckpt_cb.best_model_score.cpu().item()) if ckpt_cb.best_model_score is not None else math.inf
+        if ckpt_cb.best_model_score is not None:
+            best_val = float(ckpt_cb.best_model_score.cpu().item())
         best_path = ckpt_cb.best_model_path or ""
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
@@ -213,6 +254,7 @@ def run_once(params, max_epochs=MAX_EPOCHS, log_dir=LOG_DIR):
     wall = time.time() - t0
 
     return {
+        "fold": fold_def["name"],
         "status": status,
         "best_val_loss": best_val,
         "best_ckpt": best_path,
@@ -225,36 +267,62 @@ def run_once(params, max_epochs=MAX_EPOCHS, log_dir=LOG_DIR):
 def main():
     set_seed(SEED)
 
-    # Build + (optionally) subsample search space
+    fold_defs = _build_fold_defs()
+    if not fold_defs:
+        raise RuntimeError("No valid training folds were created.")
+
     space = build_search_space()
     random.shuffle(space)
     if MAX_TRIALS > 0:
         space = space[:MAX_TRIALS]
 
-    results_path = Path(RESULTS_CSV)
-    write_header = not results_path.exists()
-    results_path.parent.mkdir(parents=True, exist_ok=True)
+    for fold_def in fold_defs:
+        results_path = Path(f"grid_results_{fold_def['run_tag']}.csv")
+        write_header = not results_path.exists()
+        results_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with results_path.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames = [
-    "status", "best_val_loss", "best_ckpt", "run_name", "wall_time_sec",
-    "num_features",            # <-- add this
-    "batch_size", "d_model", "nhead", "num_layers", "dim_ff", "dropout",
-    "pool", "lr", "weight_decay", "warmup_steps", "reduce_pat", "reduce_factor",
-])
-        if write_header:
-            writer.writeheader()
+        print(f"\n=== Training fold {fold_def['name']} ===")
+        with results_path.open("a", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "fold",
+                    "status",
+                    "best_val_loss",
+                    "best_ckpt",
+                    "run_name",
+                    "wall_time_sec",
+                    "num_features",
+                    "batch_size",
+                    "d_model",
+                    "nhead",
+                    "num_layers",
+                    "dim_ff",
+                    "dropout",
+                    "pool",
+                    "lr",
+                    "weight_decay",
+                    "warmup_steps",
+                    "reduce_pat",
+                    "reduce_factor",
+                ],
+            )
+            if write_header:
+                writer.writeheader()
 
-        total = len(space)
-        for i, params in enumerate(space, 1):
-            print(f"\n=== Trial {i}/{total} ===")
-            print(params)
-            metrics = run_once(params)
-            writer.writerow(metrics)
-            f.flush()
-            print(f"→ status: {metrics['status']}, best val: {metrics['best_val_loss']:.6f}, ckpt: {metrics['best_ckpt']}")
+            total = len(space)
+            for i, params in enumerate(space, 1):
+                print(f"\n=== Fold {fold_def['name']} | Trial {i}/{total} ===")
+                print(params)
+                metrics = run_once(params, fold_def=fold_def)
+                writer.writerow(metrics)
+                f.flush()
+                print(
+                    f"→ status: {metrics['status']}, best val: {metrics['best_val_loss']:.6f}, "
+                    f"ckpt: {metrics['best_ckpt']}"
+                )
 
-    print(f"\nDone. Results saved to {results_path.resolve()}")
+        print(f"Results saved to {results_path.resolve()}")
 
 
 if __name__ == "__main__":
