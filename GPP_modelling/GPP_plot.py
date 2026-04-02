@@ -68,8 +68,7 @@ RADIATION_MODE = "noRad"
 
 
 def _dataset_variant_tag() -> str:
-    in_dir_str = str(IN_DIR).lower()
-    return "no_si" if "no_si" in in_dir_str else "si"
+    return str(PLOT_CHECKPOINT_HINT).strip().lower()
 
 
 def _normalize_split_method() -> str:

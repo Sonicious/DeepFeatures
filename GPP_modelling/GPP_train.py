@@ -26,6 +26,7 @@ try:
         INCLUDE_STD_FEATURES,
         LOSO_VAL_SITES,
         OUT_DIR,
+        PLOT_CHECKPOINT_HINT,
     )
 except ImportError:
     from config import (
@@ -33,6 +34,7 @@ except ImportError:
         INCLUDE_STD_FEATURES,
         LOSO_VAL_SITES,
         OUT_DIR,
+        PLOT_CHECKPOINT_HINT,
     )
 
 from sites import sites_dict
@@ -79,8 +81,7 @@ NUM_FEATURES = 12 if INCLUDE_STD_FEATURES else 6
 
 
 def _dataset_variant_tag() -> str:
-    in_dir_str = str(OUT_DIR).lower()
-    return "no_si" if "no_si" in in_dir_str else "si"
+    return str(PLOT_CHECKPOINT_HINT).strip().lower()
 
 SPACE = {
     "num_features": [NUM_FEATURES],
