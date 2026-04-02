@@ -27,6 +27,9 @@ try:
         LOSO_VAL_SITES,
         OUT_DIR,
         PLOT_CHECKPOINT_HINT,
+        SPLIT_METHOD,
+        TRAIN_YEARS,
+        VAL_YEARS,
     )
 except ImportError:
     from config import (
@@ -35,6 +38,9 @@ except ImportError:
         LOSO_VAL_SITES,
         OUT_DIR,
         PLOT_CHECKPOINT_HINT,
+        SPLIT_METHOD,
+        TRAIN_YEARS,
+        VAL_YEARS,
     )
 
 from sites import sites_dict
@@ -83,6 +89,21 @@ NUM_FEATURES = 12 if INCLUDE_STD_FEATURES else 6
 def _dataset_variant_tag() -> str:
     return str(PLOT_CHECKPOINT_HINT).strip().lower()
 
+
+def _normalize_split_method() -> str:
+    method = SPLIT_METHOD.strip().lower()
+    aliases = {
+        "year": "year",
+        "years": "year",
+        "site": "site_loso",
+        "loso": "site_loso",
+        "site_loso": "site_loso",
+        "leave_one_site_out": "site_loso",
+    }
+    if method not in aliases:
+        raise ValueError(f"Unknown SPLIT_METHOD: {SPLIT_METHOD}")
+    return aliases[method]
+
 SPACE = {
     "num_features": [NUM_FEATURES],
     "batch_size": [12],
@@ -111,6 +132,17 @@ def _available_sites() -> List[str]:
 
 def _build_fold_defs() -> List[Dict[str, str]]:
     variant_tag = _dataset_variant_tag()
+    method = _normalize_split_method()
+    if method == "year":
+        train_tag = f"years{min(TRAIN_YEARS)}-{max(TRAIN_YEARS)}"
+        val_tag = f"years{'-'.join(str(y) for y in sorted(VAL_YEARS))}"
+        return [{
+            "name": "year_split",
+            "train_dataset_tag": train_tag,
+            "val_dataset_tag": val_tag,
+            "run_tag": f"{FEATURE_SOURCE}_{FEATURE_TAG}_{RADIATION_MODE}_{variant_tag}_{train_tag}_to_{val_tag}",
+        }]
+
     sites = _available_sites()
     holdout_sites = list(LOSO_VAL_SITES) if LOSO_VAL_SITES else sites
     folds = []

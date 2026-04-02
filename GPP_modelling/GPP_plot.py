@@ -178,6 +178,16 @@ def _site_to_fold(fold_defs: List[Dict[str, object]]) -> Dict[str, Dict[str, obj
     return mapping
 
 
+def _resolve_fold_for_site(
+    site: str,
+    fold_defs: List[Dict[str, object]],
+    site_to_fold: Dict[str, Dict[str, object]],
+) -> Optional[Dict[str, object]]:
+    if _normalize_split_method() == "year":
+        return fold_defs[0] if fold_defs else None
+    return site_to_fold.get(site)
+
+
 def _site_in_filename(site: str, name: str) -> bool:
     return site in name
 
@@ -497,13 +507,21 @@ def plot_combined(packs: List[Dict], out_dir: Path, label: str):
     )
 
     fig.tight_layout(rect=[0, 0.04, 1, 1])
-    out_png = out_dir / "gpp_compare_combined_bottomlegend.png"
-    out_pdf = out_dir / "gpp_compare_combined_bottomlegend.pdf"
+    filename_tag = _output_filename_tag()
+    out_png = out_dir / f"gpp_compare_combined_bottomlegend_{filename_tag}.png"
+    out_pdf = out_dir / f"gpp_compare_combined_bottomlegend_{filename_tag}.pdf"
     fig.savefig(out_png, dpi=220, bbox_inches="tight")
     fig.savefig(out_pdf, bbox_inches="tight")
     plt.close(fig)
     print(f"   combined saved: {out_png}")
     print(f"   combined saved: {out_pdf}")
+
+
+def _output_filename_tag() -> str:
+    method_tag = _normalize_split_method()
+    hint_tag = str(PLOT_CHECKPOINT_HINT).strip().replace(" ", "_")
+    feature_tag = "meanstd" if INCLUDE_STD_FEATURES else "mean"
+    return f"{FEATURE_SOURCE}_{feature_tag}_{RADIATION_MODE}_{method_tag}_{hint_tag}"
 
 
 def _predict(model: nn.Module, device: torch.device, x_in: np.ndarray) -> np.ndarray:
@@ -552,7 +570,8 @@ def main():
         raise RuntimeError("No valid folds found for plotting.")
 
     fold_models: Dict[str, Dict[str, object]] = {}
-    for fold_def in fold_defs:
+    if _normalize_split_method() == "year":
+        fold_def = fold_defs[0]
         ckpt_path = _latest_checkpoint_from_results(fold_def["run_tag"])
         model, f_model, ckpt_label = load_model(ckpt_path, device)
         fold_models[fold_def["name"]] = {
@@ -561,7 +580,18 @@ def main():
             "f_model": f_model,
             "ckpt_label": ckpt_label,
         }
-        print(f"Using checkpoint for {fold_def['name']}: {ckpt_path}")
+        print(f"Using single checkpoint for year split: {ckpt_path}")
+    else:
+        for fold_def in fold_defs:
+            ckpt_path = _latest_checkpoint_from_results(fold_def["run_tag"])
+            model, f_model, ckpt_label = load_model(ckpt_path, device)
+            fold_models[fold_def["name"]] = {
+                "fold_def": fold_def,
+                "model": model,
+                "f_model": f_model,
+                "ckpt_label": ckpt_label,
+            }
+            print(f"Using checkpoint for {fold_def['name']}: {ckpt_path}")
 
     site_to_fold = _site_to_fold(fold_defs)
     label = "prediction"
@@ -582,11 +612,10 @@ def main():
         if site is None:
             print(f"⚠️ Missing site mapping for cube {cid} - skip")
             continue
-        if site not in site_to_fold:
+        fold_def = _resolve_fold_for_site(site, fold_defs, site_to_fold)
+        if fold_def is None:
             print(f"⚠️ No fold configured for site {site} - skip")
             continue
-
-        fold_def = site_to_fold[site]
         fold_state = fold_models[fold_def["name"]]
         model = fold_state["model"]
         f_model = fold_state["f_model"]
@@ -733,7 +762,7 @@ def main():
             })
 
     summary_df = pd.DataFrame(summary_rows)
-    summary_path = OUT_DIR / "global_split_metrics.csv"
+    summary_path = OUT_DIR / f"global_split_metrics_{_output_filename_tag()}.csv"
     summary_df.to_csv(summary_path, index=False)
 
     print(f"\nSaved site metrics to {site_metrics_path}")

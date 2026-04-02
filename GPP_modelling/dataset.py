@@ -16,6 +16,9 @@ try:
         IN_DIR,
         LOSO_VAL_SITES,
         OUT_DIR,
+        SPLIT_METHOD,
+        TRAIN_YEARS,
+        VAL_YEARS,
     )
 except ImportError:
     from config import (
@@ -24,6 +27,9 @@ except ImportError:
         IN_DIR,
         LOSO_VAL_SITES,
         OUT_DIR,
+        SPLIT_METHOD,
+        TRAIN_YEARS,
+        VAL_YEARS,
     )
 
 # ------------------------
@@ -297,8 +303,39 @@ def _build_site_lookup(cube_ids: List[str]) -> Dict[str, str]:
     return lookup
 
 
+def _normalize_split_method() -> str:
+    method = SPLIT_METHOD.strip().lower()
+    aliases = {
+        "year": "year",
+        "years": "year",
+        "site": "site_loso",
+        "loso": "site_loso",
+        "site_loso": "site_loso",
+        "leave_one_site_out": "site_loso",
+    }
+    if method not in aliases:
+        raise ValueError(f"Unknown SPLIT_METHOD: {SPLIT_METHOD}")
+    return aliases[method]
+
+
 def _build_split_definitions(cube_ids: List[str]) -> List[Dict[str, object]]:
     site_lookup = _build_site_lookup(cube_ids)
+    method = _normalize_split_method()
+
+    if method == "year":
+        train_tag = f"years{min(TRAIN_YEARS)}-{max(TRAIN_YEARS)}"
+        val_tag = f"years{'-'.join(str(y) for y in sorted(VAL_YEARS))}"
+        return [{
+            "name": "year_split",
+            "mode": "year",
+            "train_sites": set(site_lookup.values()),
+            "val_sites": set(site_lookup.values()),
+            "train_years": set(TRAIN_YEARS),
+            "val_years": set(VAL_YEARS),
+            "dataset_tag_train": train_tag,
+            "dataset_tag_val": val_tag,
+            "summary": f"train years {sorted(TRAIN_YEARS)}, val years {sorted(VAL_YEARS)}",
+        }]
 
     available_sites = [site_lookup[cid] for cid in cube_ids if cid in site_lookup]
     holdout_sites = list(LOSO_VAL_SITES) if LOSO_VAL_SITES else available_sites
@@ -314,8 +351,11 @@ def _build_split_definitions(cube_ids: List[str]) -> List[Dict[str, object]]:
             continue
         folds.append({
             "name": f"loso_{holdout_site}",
+            "mode": "site_loso",
             "train_sites": train_sites,
             "val_sites": {holdout_site},
+            "train_years": None,
+            "val_years": None,
             "dataset_tag_train": f"sitesTrain_excl_{holdout_site}",
             "dataset_tag_val": f"sitesVal_{holdout_site}",
             "summary": f"train sites {sorted(train_sites)}, val site [{holdout_site}]",
@@ -404,7 +444,8 @@ def main():
     if not split_defs:
         raise RuntimeError("No valid split definitions were created.")
 
-    print("Using split method: site_loso")
+    method = _normalize_split_method()
+    print(f"Using split method: {method}")
     for split_def in split_defs:
         print(f"  - {split_def['name']}: {split_def['summary']}")
 
@@ -414,6 +455,9 @@ def main():
 
         train_sites = split_def["train_sites"]
         val_sites = split_def["val_sites"]
+        train_years = split_def["train_years"]
+        val_years = split_def["val_years"]
+        mode = split_def["mode"]
 
         print(f"\n=== Building split {split_def['name']} ===")
 
@@ -424,7 +468,10 @@ def main():
                 continue
 
             flux_years = detect_flux_years_for_site(site, ROOT_DIR)
-            active_years = sorted(flux_years)
+            if mode == "year":
+                active_years = sorted(flux_years & (train_years | val_years))
+            else:
+                active_years = sorted(flux_years)
 
             if not active_years:
                 print(f"→ {cid} ({site}): no relevant years - skip")
@@ -455,11 +502,18 @@ def main():
                 print(f"→ {cid} ({site}): 0 samples after windowing - skip")
                 continue
 
-            end_sites = meta["site"].values
-            tr_mask = np.isin(end_sites, list(train_sites))
-            va_mask = np.isin(end_sites, list(val_sites))
-            train_desc = f"sites {sorted(train_sites)}"
-            val_desc = f"sites {sorted(val_sites)}"
+            if mode == "year":
+                end_years = pd.to_datetime(meta["end_date"]).dt.year.values
+                tr_mask = np.isin(end_years, list(train_years))
+                va_mask = np.isin(end_years, list(val_years))
+                train_desc = f"years {sorted(train_years)}"
+                val_desc = f"years {sorted(val_years)}"
+            else:
+                end_sites = meta["site"].values
+                tr_mask = np.isin(end_sites, list(train_sites))
+                va_mask = np.isin(end_sites, list(val_sites))
+                train_desc = f"sites {sorted(train_sites)}"
+                val_desc = f"sites {sorted(val_sites)}"
 
             n_tr = int(tr_mask.sum())
             n_va = int(va_mask.sum())

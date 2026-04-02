@@ -16,8 +16,16 @@ CUBE_IDS = ["003", "004", "005"]
 # True  -> use interpolated mean + std features (12 features)
 INCLUDE_STD_FEATURES = True
 
+# Split behaviour:
+#   "year"      -> one model, train/val split by years
+#   "site_loso" -> leave-one-site-out, one model per held-out site
+SPLIT_METHOD = "site_loso"
+
+# Used only when SPLIT_METHOD == "year"
+TRAIN_YEARS = {2017, 2018, 2019}
+VAL_YEARS = {2020}
+
 # Optional manual subset of held-out sites for LOSO.
 # [] / None means: create one fold for every site in CUBE_IDS.
 LOSO_VAL_SITES = []
-
 
