@@ -27,7 +27,7 @@ def get_s2l2a(
                 f"discard the data cube generation for {data_id} for now."
             )
             return None
-    for year in range(2017, 2025):
+    for year in range(2017, 2026):
         data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
         ds = super_store["store_team"].open_data(data_id_year)
         if check_nan:
