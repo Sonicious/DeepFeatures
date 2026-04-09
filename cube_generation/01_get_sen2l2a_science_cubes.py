@@ -94,7 +94,7 @@ if __name__ == "__main__":
         ),
     )
 
-    sites_params = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
+    sites = pd.read_csv(constants.PATH_SITES_PARAMETERS_SCIENCE)
     for numb in [0]:
-        site_params = sites_params.loc[numb]
+        site_params = sites.loc[numb]
         get_s2l2a(super_store, site_params)

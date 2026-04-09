@@ -12,7 +12,7 @@ logging.getLogger("botocore.httpchecksum").setLevel(logging.WARNING)
 LOG = logging.getLogger("deepfeatures_cubgen")
 
 DIR = Path(__file__).parent.resolve()
-PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science_final.csv")
+PATH_SITES_PARAMETERS_SCIENCE = os.path.join(DIR, "sites_science_addon.csv")
 PATH_SITES_PARAMETERS_TRAINING = os.path.join(DIR, "sites_training_final.csv")
 
 DATA_ID_LAND_COVER_CLASS = "LC-1x2025x2025-2.0.0.levels"
