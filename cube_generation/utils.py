@@ -16,12 +16,11 @@ from version import version
 
 
 def readin_sites_parameters(
-    sites_params: pd.DataFrame,
-    index: int,
+    site_params: pd.Series,
     folder_name: str,
     **kwargs,
 ) -> dict:
-    site_params = sites_params.loc[index]
+    index = int(site_params["ID"])
     lat = float(site_params["lat"])
     lon = float(site_params["lon"])
 

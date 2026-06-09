@@ -19,7 +19,7 @@ def get_s2l2a(
         f"cubes/temp/{constants.SCIENCE_FOLDER_NAME}/{version}/{attrs['id']:03}.zarr"
     )
     dss = []
-    for year in range(2017, 2025):
+    for year in range(2017, 2026):
         data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
         if not super_store["store_team"].has_data(data_id_year):
             constants.LOG.info(
@@ -27,14 +27,14 @@ def get_s2l2a(
                 f"discard the data cube generation for {data_id} for now."
             )
             return None
-    for year in range(2017, 2025):
+    for year in range(2017, 2026):
         data_id_year = data_id.replace(".zarr", f"_{year}.zarr")
         ds = super_store["store_team"].open_data(data_id_year)
         if check_nan:
             constants.LOG.info(
                 f"Check dataset with data ID {data_id_year} for nan values"
             )
-            threshold = 10
+            threshold = 1
             _ = assert_dataset_nan(ds, threshold)
         ds = ds.isel(x=slice(-1000, None), y=slice(-1000, None))
         dss.append(ds)
