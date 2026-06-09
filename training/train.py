@@ -23,7 +23,7 @@ def set_seed(seed):
 
 set_seed(42)
 
-def make_loader(dataset, batch_size, drop_frac=0.5, num_workers=32, pin_memory=True, shuffle=None):
+def make_loader(dataset, batch_size, drop_frac=0.55, num_workers=32, pin_memory=True, shuffle=None):
     N = len(dataset)
     keep = int((1 - drop_frac) * N)
     indices = np.random.choice(N, keep, replace=False)
@@ -47,17 +47,17 @@ def main():
 
 
     # Create DataLoaders
-    val_iterator   = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=32)
-    train_iterator = make_loader(train_dataset, batch_size=16, num_workers=32)
+    val_iterator   = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=24)
+    train_iterator = make_loader(train_dataset, batch_size=16, num_workers=24)
 
     # Initialize the autoencoder model
-    autoencoder = TransformerAE()
+    autoencoder = TransformerAE(dbottleneck=6)
     autoencoder.to(device)  # Move the model to GPU 3
 
     # Define checkpointing (optional)
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
-        dirpath='checkpoints/',
+        dirpath='checkpoints/no_si3/',
         filename='ae-{epoch:02d}-{val_loss:.3e}',
         save_top_k=3,
         mode='min'
