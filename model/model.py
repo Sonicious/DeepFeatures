@@ -140,7 +140,7 @@ class TransformerAE(pl.LightningModule):
     def __init__(
         self,
         dbottleneck: int = 6,
-        channels: int = 10,
+        channels: int = 147,
         frames: int = 11,
         max_position: int = 350,
         num_reduced_tokens: int = 4,
@@ -155,21 +155,8 @@ class TransformerAE(pl.LightningModule):
         self.learning_rate = learning_rate
         self.loss_fn = loss_fn if loss_fn is not None else WeightedMaskedLoss()
 
-        num_dims = 147
-
-        if num_dims == 221:
-            self.d_model = 64
-            dim_feedforward = 2
-            channels=221
-        elif num_dims == 147:
-            self.d_model = 64 * 4
-            dim_feedforward = 2
-            #channels = int(self.d_model / 16)
-            channels =147
-        elif num_dims == 12:
-            self.d_model = 64 * 4
-            dim_feedforward = 8
-            channels = 12
+        self.d_model = 64 * 4
+        dim_feedforward = 2
 
 
         # Shared temporal positional embedding
