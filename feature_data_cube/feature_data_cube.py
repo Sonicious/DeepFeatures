@@ -495,12 +495,10 @@ class XrFeatureDataset:
                 f"total_chunks ({total_chunks}) must be divisible by chunk_split ({self.chunk_split})"
             )
 
-        base_frames_per_split = frames_total // split_count
-        start_frame = split_index * base_frames_per_split
-        if split_index == split_count - 1:
-            end_frame = frames_total
-        else:
-            end_frame = min(start_frame + base_frames_per_split, frames_total)
+        base_frames_per_split, remainder = divmod(frames_total, split_count)
+        extra_frame = 1 if split_index < remainder else 0
+        start_frame = (split_index * base_frames_per_split) + min(split_index, remainder)
+        end_frame = min(start_frame + base_frames_per_split + extra_frame, frames_total)
         start_chunk = start_frame * self.chunk_split
         end_chunk = end_frame * self.chunk_split
         return start_chunk, min(end_chunk, total_chunks)
