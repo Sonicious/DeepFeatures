@@ -1,13 +1,24 @@
-# surpress UserWarnings
-SITENUMBER = 47
-TIMESTEP = 200
+import os
+SITENUMBER = int(os.getenv("SITENUMBER", "48")) # default to 47 if not set
+# make directory if not exists
+output_dir = str(SITENUMBER) + "_" + "outputs"
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 PLOTTING = True
 DEBUGGING = True
 
-# 47 - time: 200
-# 48 - time: 100
-# 49 - time: 100
-# 50 - time: 300
+# create dictionary per site for timestep
+TIMESTEP_DICT = {
+    47: 200,
+    48: 100,
+    49: 100,
+    50: 328,
+    51: 200,
+    52: 212,
+    53: 200
+}
+
+TIMESTEP = TIMESTEP_DICT.get(SITENUMBER, 100) # default to 100 if site number not in dict
 
 ###############################################################################
 # Load packages
@@ -27,8 +38,6 @@ else:
 from importlib_metadata import version
 import platform
 logging.info('The Python version is {}.'.format(platform.python_version()))
-import os
-os.mkdir(str(SITENUMBER) + "_" + "outputs")
 import random
 import time
 
@@ -242,7 +251,7 @@ data = ds[["cloud_mask", "lccs_class", "esa_wc", "s2l2a"]]
 print("Finished: Dataset loaded.")
 
 # load shapefile
-file = "/Users/bp23keri/workspace/LigniteMines/data/" + str(SITENUMBER) + ".geojson"
+file = "data/" + str(SITENUMBER) + ".geojson"
 shp = gpd.read_file(file)
 
 # check if the CRS of the shapefile and the dataset match
