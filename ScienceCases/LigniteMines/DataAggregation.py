@@ -289,7 +289,7 @@ data["LigniteMask"] = mask_full
 
 if PLOTTING:
     rgb = data.s2l2a.sel(band = ["B04", "B03", "B02"]).isel(time=TIMESTEP)
-    fig = rgb.where(data['LigniteMask'] == 0).plot.imshow(robust=True, size = 10).get_figure()
+    fig = rgb.where(data['LigniteMask'] == 0).plot.imshow(robust=True, size=10, aspect=1).get_figure()
     fig.savefig(str(SITENUMBER) + "_" + "outputs" + "/" + "LigniteMask" + ".png")
 
 print("Finished: Lignite mask created.")
@@ -334,7 +334,7 @@ data["DistanceToLignite"] = np.minimum(
 
 # visualize the distance to lignite mines
 if PLOTTING:
-    fig = data["DistanceToLignite"].plot.imshow(robust=True, size=10).get_figure()
+    fig = data["DistanceToLignite"].plot.imshow(robust=True, size=10, aspect=1).get_figure()
     fig.savefig(str(SITENUMBER) + "_" + "outputs" + "/" + "DistanceToLignite" + ".png")
 
 print("Finished: Distance layer created.")
@@ -350,7 +350,7 @@ processing_mask = esa_wc_mask.tree_cover
 # visualize the RGB composite of the Sentinel-2 data, masked by the processing mask, the lignite mask, and the cloud mask
 if PLOTTING:
     rgb = data.s2l2a.sel(band = ["B04", "B03", "B02"])
-    fig = rgb.where(processing_mask).where(data["LigniteMask"] == 0).where(data["cloud_mask"] == 0).isel(time=TIMESTEP).plot.imshow(robust=True, aspect = 1, size = 10).get_figure()
+    fig = rgb.where(processing_mask).where(data["LigniteMask"] == 0).where(data["cloud_mask"] == 0).isel(time=TIMESTEP).plot.imshow(robust=True, aspect=1, size=10).get_figure()
     fig.savefig(str(SITENUMBER) + "_" + "outputs" + "/" + "RGB_Composite" + ".png")
 
 # compute spectral indices and add them to the dataset
