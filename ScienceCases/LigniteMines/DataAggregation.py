@@ -245,8 +245,9 @@ def compute_spectral_indices(cube: xr.Dataset) -> xr.Dataset:
 #             )
 # )
 # ds = store_team.open_data("cubes/science/0.1.0/047.zarr")
-ds = xr.open_zarr("/Users/bp23keri/workspace/sciencecubes/0" + str(SITENUMBER) + ".zarr")
-data = ds[["cloud_mask", "lccs_class", "esa_wc", "s2l2a"]]
+sciencecube = xr.open_zarr("/Users/bp23keri/workspace/sciencecubes/0" + str(SITENUMBER) + ".zarr")
+featurecube = xr.open_zarr("/Users/bp23keri/workspace/featurecubes/0" + str(SITENUMBER) + ".zarr")
+data = sciencecube[["cloud_mask", "lccs_class", "esa_wc", "s2l2a"]]
 
 print("Finished: Dataset loaded.")
 
@@ -358,11 +359,24 @@ print("Finished: Spectral indices computed.")
 
 # select the kNDVI index and the distance to lignite mines, masked by the processing mask, the lignite mask, and the cloud mask
 kndvi_data = data["SpectralIndices"].sel(index = "kNDVI").where(processing_mask).where(data["LigniteMask"] == 0).where(data["cloud_mask"] == 0)
-distance_data = data["DistanceToLignite"].where(kndvi_data.notnull())
-lignite_ds = xr.Dataset({
-    "kNDVI": kndvi_data,
-    "DistanceToLignite": distance_data
+features_data = featurecube.where(processing_mask).where(data["LigniteMask"] == 0).where(data["cloud_mask"] == 0)
+features_data = features_data["features"].to_dataset(dim="feature")
+features_data = features_data.rename_vars({
+    name: f"feature_{name}"
+    for name in features_data.data_vars
 })
+kndvi_data = kndvi_data.sel(
+    x=features_data.x,
+    y=features_data.y
+)
+distance_data = data["DistanceToLignite"].where(kndvi_data.notnull())
+lignite_ds = xr.merge([
+    xr.Dataset({
+        "kNDVI": kndvi_data,
+        "DistanceToLignite": distance_data
+    }),
+    features_data
+])
 # additional chunking won't help because the data is already chunked in a way that allows for efficient processing but stacking might help
 lignite_stack = lignite_ds.stack(pixel=("y", "x"))
 
