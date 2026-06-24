@@ -5,7 +5,10 @@ output_dir = str(SITENUMBER) + "_" + "outputs"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 PLOTTING = True
-DEBUGGING = False
+# get Debugging from environment variable, default to True if not set
+DEBUGGING = os.getenv("DEBUGGING", "True").lower() in ["true", "1", "t", "y", "yes"]
+print("SITENUMBER: " + str(SITENUMBER))
+print("DEBUGGING Mode: " + str(DEBUGGING))
 
 # create dictionary per site for timestep
 TIMESTEP_DICT = {
