@@ -5,7 +5,7 @@ output_dir = str(SITENUMBER) + "_" + "outputs"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 PLOTTING = True
-DEBUGGING = True
+DEBUGGING = False
 
 # create dictionary per site for timestep
 TIMESTEP_DICT = {
@@ -394,6 +394,7 @@ else: # Full Dataset
 
 # convert to dataframe and drop NaN values
 ddf = tt.to_dataframe().dropna()
+ddf = ddf.drop(columns=["x", "y"])
 print("Finished: Data converted to DataFrame.")
 
 # Save to CSV
